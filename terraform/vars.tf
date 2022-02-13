@@ -23,6 +23,11 @@ variable "SPN_TENANT_ID" {
   type        = string
 }
 
+variable "VM_USER_PASSWORD" {
+  description = "VM Local user password"
+  type        = string
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # REQUIRED PARAMETERS
 # You must provide a value for each of these parameters.
@@ -52,9 +57,11 @@ variable "tags" {
   description = "A map of the tags to use on the resources that are deployed with this module."
 
   default = {
-    Source  = "terraform"
-    Owner   = "Raki"
-    Project = "SQL Server Migration to MIAA"
+    Source                                                                     = "terraform"
+    Owner                                                                      = "Raki"
+    Project                                                                    = "SQL Server Migration to MIAA"
+    azsecpack                                                                  = "nonprod"
+    "platformsettings.host_environment.service.platform_optedin_for_rootcerts" = "true"
   }
 }
 
