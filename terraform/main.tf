@@ -130,7 +130,6 @@ module "sql_2012" {
   resource_group_location = var.resource_group_location
   resource_group_name     = var.resource_group_name
   subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "FG-SQL")
-  private_ip              = "192.168.2.20" # We will space out by 20 in case other IPs are required
   user_password           = var.VM_USER_PASSWORD
   vm_image_publisher      = "MicrosoftSQLServer"
   vm_image_offer          = "SQL2012SP4-WS2012R2"
@@ -147,7 +146,6 @@ module "sql_2014" {
   resource_group_location = var.resource_group_location
   resource_group_name     = var.resource_group_name
   subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "FG-SQL")
-  private_ip              = "192.168.2.40"
   user_password           = var.VM_USER_PASSWORD
   vm_image_publisher      = "MicrosoftSQLServer"
   vm_image_offer          = "sql2014sp3-ws2012r2"
@@ -164,7 +162,6 @@ module "sql_2016" {
   resource_group_location = var.resource_group_location
   resource_group_name     = var.resource_group_name
   subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "FG-SQL")
-  private_ip              = "192.168.2.60"
   user_password           = var.VM_USER_PASSWORD
   vm_image_publisher      = "MicrosoftSQLServer"
   vm_image_offer          = "sql2016sp3-ws2019"
@@ -181,11 +178,55 @@ module "sql_2019" {
   resource_group_location = var.resource_group_location
   resource_group_name     = var.resource_group_name
   subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "MAPLE-SQL")
-  private_ip              = "192.168.3.20"
   user_password           = var.VM_USER_PASSWORD
   vm_image_publisher      = "MicrosoftSQLServer"
   vm_image_offer          = "sql2019-ws2019"
   vm_image_sku            = "enterprise"
+
+  tags = var.tags
+}
+# ---------------------------------------------------------------------------------------------------------------------
+# AKS - WITH CNI
+# ---------------------------------------------------------------------------------------------------------------------
+resource "azurerm_kubernetes_cluster" "aks" {
+  depends_on = [module.vnet]
+
+  name                = "aks-cni"
+  location            = var.resource_group_location
+  resource_group_name = var.resource_group_name
+  dns_prefix          = "akscni"
+
+  default_node_pool {
+    name                = "agentpool"
+    node_count          = 3
+    vm_size             = "Standard_DS3_v2"
+    type                = "VirtualMachineScaleSets"
+    enable_auto_scaling = true
+    min_count           = 1
+    max_count           = 3
+
+    # Required for advanced networking
+    vnet_subnet_id = lookup(module.vnet.vnet_subnets_name_id, "AKS")
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  network_profile {
+    network_plugin     = "azure"
+    load_balancer_sku  = "standard"
+    dns_service_ip     = "192.168.64.10"
+    docker_bridge_cidr = "172.17.0.1/16"
+    service_cidr       = "192.168.64.0/19"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      # Ignore changes to nodes because we have autoscale enabled
+      default_node_pool[0].node_count
+    ]
+  }
 
   tags = var.tags
 }

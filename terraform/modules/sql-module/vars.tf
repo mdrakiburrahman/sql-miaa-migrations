@@ -23,11 +23,6 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "private_ip" {
-  description = "Private IP address to assign to the NIC"
-  type        = string
-}
-
 variable "tags" {
   type        = map(string)
   description = "A map of the tags to use on the resources that are deployed with this module."

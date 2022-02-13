@@ -6,8 +6,7 @@ resource "azurerm_network_interface" "example" {
   ip_configuration {
     name                          = "internal"
     subnet_id                     = var.subnet_id
-    private_ip_address_allocation = "Dynamic" // Static because these are domain controllers
-    private_ip_address            = var.private_ip
+    private_ip_address_allocation = "Dynamic" // Dynamic on purpose
   }
 
   tags = var.tags
