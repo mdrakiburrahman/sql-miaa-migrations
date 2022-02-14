@@ -19,7 +19,7 @@ module "vnet" {
   address_space       = ["192.168.0.0/16"]
   subnet_prefixes     = ["192.168.0.0/24", "192.168.1.0/24", "192.168.2.0/24", "192.168.3.0/24", "192.168.48.0/21", "192.168.144.64/27"]
   subnet_names        = ["FG-DC", "MAPLE-DC", "FG-SQL", "MAPLE-SQL", "AKS", "AzureBastionSubnet"]
-  dns_servers         = ["192.168.0.4", "192.168.1.4"] # The first IPs in FG and MAPLE subnets, we will statically assign these to the VMs
+  dns_servers         = ["192.168.0.4", "192.168.1.4", "168.63.129.16"] # The first IPs in FG and MAPLE subnets, we will statically assign these to the VMs
 
   tags = var.tags
 }
@@ -188,45 +188,45 @@ module "sql_2019" {
 # ---------------------------------------------------------------------------------------------------------------------
 # AKS - WITH CNI
 # ---------------------------------------------------------------------------------------------------------------------
-resource "azurerm_kubernetes_cluster" "aks" {
-  depends_on = [module.vnet]
+# resource "azurerm_kubernetes_cluster" "aks" {
+#   depends_on = [module.vnet]
 
-  name                = "aks-cni"
-  location            = var.resource_group_location
-  resource_group_name = var.resource_group_name
-  dns_prefix          = "akscni"
+#   name                = "aks-cni"
+#   location            = var.resource_group_location
+#   resource_group_name = var.resource_group_name
+#   dns_prefix          = "akscni"
 
-  default_node_pool {
-    name                = "agentpool"
-    node_count          = 3
-    vm_size             = "Standard_DS3_v2"
-    type                = "VirtualMachineScaleSets"
-    enable_auto_scaling = true
-    min_count           = 1
-    max_count           = 3
+#   default_node_pool {
+#     name                = "agentpool"
+#     node_count          = 3
+#     vm_size             = "Standard_DS3_v2"
+#     type                = "VirtualMachineScaleSets"
+#     enable_auto_scaling = true
+#     min_count           = 1
+#     max_count           = 3
 
-    # Required for advanced networking
-    vnet_subnet_id = lookup(module.vnet.vnet_subnets_name_id, "AKS")
-  }
+#     # Required for advanced networking
+#     vnet_subnet_id = lookup(module.vnet.vnet_subnets_name_id, "AKS")
+#   }
 
-  identity {
-    type = "SystemAssigned"
-  }
+#   identity {
+#     type = "SystemAssigned"
+#   }
 
-  network_profile {
-    network_plugin     = "azure"
-    load_balancer_sku  = "standard"
-    dns_service_ip     = "192.168.64.10"
-    docker_bridge_cidr = "172.17.0.1/16"
-    service_cidr       = "192.168.64.0/19"
-  }
+#   network_profile {
+#     network_plugin     = "azure"
+#     load_balancer_sku  = "standard"
+#     dns_service_ip     = "192.168.64.10"
+#     docker_bridge_cidr = "172.17.0.1/16"
+#     service_cidr       = "192.168.64.0/19"
+#   }
 
-  lifecycle {
-    ignore_changes = [
-      # Ignore changes to nodes because we have autoscale enabled
-      default_node_pool[0].node_count
-    ]
-  }
+#   lifecycle {
+#     ignore_changes = [
+#       # Ignore changes to nodes because we have autoscale enabled
+#       default_node_pool[0].node_count
+#     ]
+#   }
 
-  tags = var.tags
-}
+#   tags = var.tags
+# }
