@@ -1,0 +1,20 @@
+apiVersion: arcdata.microsoft.com/v1beta1
+kind: ActiveDirectoryConnector
+metadata:
+  name: adarc
+  namespace: arc
+spec:
+  activeDirectory:
+    realm: FG.CONTOSO.COM # Name of the Active Directory domain in uppercase. This is the AD domain that this instance of AD Connector will be associated with.
+    netbiosDomainName: FG # This is often used to qualify accounts in the AD domain. e.g. if the accounts in the domain are referred to as FG\admin, then FG is the NETBIOS domain name.
+    domainControllers:
+      primaryDomainController:
+        hostname: FG-DC-1-vm.fg.contoso.com # Our domain controller
+      secondaryDomainControllers:
+      - hostname: FG-DC-2-vm.fg.contoso.com
+      - hostname: MAPLE-DC-1-vm.maple.fg.contoso.com
+  dns:
+    preferK8sDnsForPtrLookups: false
+    nameserverIPAddresses:
+      - 192.168.0.4 # IP Address of DNS nameserver, which is just domain controller in this demo env
+      - 192.168.1.4 # MAPLE-DC

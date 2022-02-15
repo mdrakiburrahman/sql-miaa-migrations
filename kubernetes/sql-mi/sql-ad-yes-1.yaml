@@ -1,0 +1,62 @@
+apiVersion: v1
+data:
+  password: <sqlauth-base64-encoded-password>
+  username: <sqlauth-base64-encoded-user>
+kind: Secret
+metadata:
+  name: sql-ad-yes-1-login-secret
+  namespace: arc
+type: Opaque
+---
+apiVersion: sql.arcdata.microsoft.com/v2
+kind: SqlManagedInstance
+metadata:
+  name: sql-ad-yes-1
+  namespace: arc
+spec:
+  backup:
+    retentionPeriodInDays: 7
+  dev: true
+  tier: GeneralPurpose
+  forceHA: "true"
+  licenseType: LicenseIncluded
+  replicas: 1
+  scheduling:
+    default:
+      resources:
+        limits:
+          cpu: "2"
+          memory: 4Gi
+        requests:
+          cpu: "2"
+          memory: 4Gi
+  security:
+    adminLoginSecret: sql-ad-yes-1-login-secret
+    activeDirectory:
+      connector:
+        name: adarc
+        namespace: arc
+      accountName: sql-ad-yes-1-account
+      keytabSecret: sql-ad-yes-1-keytab-secret
+  services:
+    primary:
+      type: NodePort
+      dnsName: sql-ad-yes-1.fg.contoso.com
+      port: 31433
+  storage:
+    backups:
+      volumes:
+        - className: managed-premium
+          size: 5Gi
+    data:
+      volumes:
+        - className: managed-premium
+          size: 5Gi
+    datalogs:
+      volumes:
+        - className: managed-premium
+          size: 5Gi
+    logs:
+      volumes:
+        - className: managed-premium
+          size: 5Gi

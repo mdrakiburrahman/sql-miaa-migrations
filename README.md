@@ -1,11 +1,9 @@
 # SQL Server to Arc SQL MI - Migration environment
+> `#TODO HEADER WITH SQL SERVERS, SQL MI AND TERRAFORM`
 A terraform-built demo environment for migrating various SQL Servers to Arc SQL MI.
 
 We showcase the following entities in this repo:
-> `#TODO DIAGRAM`
-
-The Domain and DNS setup looks like this:
-> `#TODO DIAGRAM`
+> `#TODO DIAGRAM | Domain, DNS`
 
 ## Table of Contents <!-- omit in toc -->
 - [Infrastructure Deployment](#infrastructure-deployment)
@@ -22,6 +20,11 @@ The Domain and DNS setup looks like this:
 - [Arc Deployment](#post-deployment)
 - [Data Migration Setup](#migration-setup)
 - [Arc SQL MI Setup with AD](#arc-sql-mi-setup)
+  - [Data Controller deployment](#data-controller-deployment)
+  - [Active Directory pre-reqs](#active-directory-pre-reqs)
+  - [Keytab creation](#keytab-creation)
+  - [SQL MI Deployment](#sql-mi-deployment)
+  - [Create Windows Logins](#create-windows-logins)
 
 ## Infrastructure Deployment
 
@@ -51,7 +54,7 @@ export TF_VAR_resource_group_name='raki-sql-to-miaa-migration-test-rg'
 # ---------------------
 cd terraform
 terraform init
-terraform plan
+terraform plan 
 terraform apply -auto-approve
 
 # ---------------------
@@ -368,6 +371,220 @@ From `FG-SQL-2014`, and `MAPLE-SQL-2019`, login to all 4 instances as Windows AD
 
 ---
 
-### Arc SQL MI Setup
+## Arc SQL MI Setup
 
-We deploy in _Indirect_ mode since it's a bit faster but this will work identically in _Direct_:
+### Data Controller deployment
+
+We deploy in _Indirect_ mode since it's a bit faster but this will work identically in _Direct_.
+
+We run this directly in our `.devcontainer` which has the pre-reqs installed:
+
+```bash
+cd kubernetes
+
+# Deployment variables
+export adminUsername="admin"
+export resourceGroup=$TF_VAR_resource_group_name
+export AZDATA_USERNAME="admin"
+export AZDATA_PASSWORD="P@s5w0rd123!!"
+export arcDcName="arc-dc"
+export azureLocation="eastus"
+export clusterName="aks-cni"
+export AZDATA_LOGSUI_USERNAME=$AZDATA_USERNAME
+export AZDATA_METRICSUI_USERNAME=$AZDATA_USERNAME
+export AZDATA_LOGSUI_PASSWORD=$AZDATA_PASSWORD
+export AZDATA_METRICSUI_PASSWORD=$AZDATA_PASSWORD
+
+# Login as service principal
+az login --service-principal --username $spnClientId --password $spnClientSecret --tenant $spnTenantId
+az account set --subscription $subscriptionId
+
+# Adding Azure Arc CLI extensions
+az config set extension.use_dynamic_install=yes_without_prompt
+
+# Getting AKS cluster credentials kubeconfig file
+az aks get-credentials --resource-group $resourceGroup --name $clusterName --admin
+
+kubectl get nodes
+
+# Monitor pods in arc namespace in another window
+watch kubectl get pods -n arc
+
+#########################################
+# Create data controller in indirect mode
+#########################################
+# Create with the AKS profile
+az arcdata dc create --profile-name azure-arc-aks-premium-storage \
+                     --k8s-namespace arc \
+                     --name $arcDcName \
+                     --subscription $subscriptionId \
+                     --resource-group $resourceGroup \
+                     --location $azureLocation \
+                     --connectivity-mode indirect \
+                     --use-k8s
+
+# Monitor Data Controller
+watch kubectl get datacontroller -n arc
+
+# Spot for ActiveDirectoryConnector CRD
+kubectl get ActiveDirectoryConnector -n arc
+```
+
+---
+
+### Active Directory pre-reqs
+
+Perform the pre-reqs below in `FG-DC-1` and repeat #3 on `MAPLE-DC-1`:
+
+```PowerShell
+Import-Module ActiveDirectory
+#######################################
+# 1. Create an AD Account for our sqlmi
+#######################################
+# Create OU - not an Arc requirement but nice to show since everyone uses it
+# Arc SQL MI Users can be in any OU
+New-ADOrganizationalUnit -Name "ArcSQLMI" -Path "DC=FG,DC=CONTOSO,DC=COM"
+
+$pass = "P@s5w0rd123!!" | ConvertTo-SecureString -AsPlainText -Force
+New-ADUser -Name "sql-ad-yes-1-account" `
+           -UserPrincipalName "sql-ad-yes-1-account@fg.contoso.com" `
+           -Path "OU=ArcSQLMI,DC=FG,DC=CONTOSO,DC=COM" `
+           -AccountPassword $pass `
+           -Enabled $true `
+           -ChangePasswordAtLogon $false `
+           -PasswordNeverExpires $true
+
+# "-PasswordNeverExpires "Since we don't want to deal with Keytab rotations for this demo, in PROD we don't need this
+
+################
+# 2. Create SPNs
+################
+setspn -S MSSQLSvc/sql-ad-yes-1.fg.contoso.com sql-ad-yes-1-account
+setspn -S MSSQLSvc/sql-ad-yes-1.fg.contoso.com:31433 sql-ad-yes-1-account
+
+# Verify SPNs got created
+$search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+$search.filter = "(servicePrincipalName=*)"
+
+## You can use this to filter for OU's:
+## $results = $search.Findall() | ?{ $_.path -like '*OU=whatever,DC=whatever,DC=whatever*' }
+$results = $search.Findall()
+
+foreach( $result in $results ) {
+	$userEntry = $result.GetDirectoryEntry()
+	Write-host "Object Name	=	"	$userEntry.name -backgroundcolor "yellow" -foregroundcolor "black"
+	Write-host "DN	=	"	$userEntry.distinguishedName
+	Write-host "Object Cat.	=	" $userEntry.objectCategory
+	Write-host "servicePrincipalNames"
+
+	$i=1
+	foreach( $SPN in $userEntry.servicePrincipalName ) {
+		Write-host "SPN ${i} =$SPN"
+		$i+=1
+	}
+	Write-host ""
+}
+
+#############################################
+# 3. Reverse Lookup Zone - Pointer - FG-DC-1
+#############################################
+# Add a reverse lookup zone
+Add-DnsServerPrimaryZone -NetworkId "192.168.0.0/24" -ReplicationScope Domain
+
+# Get reverse zone name
+$Zones = @(Get-DnsServerZone)
+ForEach ($Zone in $Zones) {
+    if (-not $($Zone.IsAutoCreated) -and ($Zone.IsReverseLookupZone)) {
+       $Reverse = $Zone.ZoneName
+    }
+}
+
+# Add a PTR record to the Reverse Lookup Zone for the Domain Controller. This is needed for when the SQL MI Pod looks up the DC in reverse.
+Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 4 -PTRDomainName FG-DC-1-vm.fg.contoso.com # 4 is because of the IP address of the DC
+Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 5 -PTRDomainName FG-DC-2-vm.fg.contoso.com # 5 is because of the IP address of the DC
+
+################################################
+#              RUN ON MAPLE-DC-1
+################################################
+# 4. Reverse Lookup Zone - Pointer - MAPLE-DC-1
+################################################
+# Add a reverse lookup zone
+Add-DnsServerPrimaryZone -NetworkId "192.168.1.0/24" -ReplicationScope Domain
+
+$Zones = @(Get-DnsServerZone)
+ForEach ($Zone in $Zones) {
+    if (-not $($Zone.IsAutoCreated) -and ($Zone.IsReverseLookupZone)) {
+       $Reverse = $Zone.ZoneName
+    }
+}
+
+Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 4 -PTRDomainName MAPLE-DC-1-vm.maple.fg.contoso.com
+```
+
+---
+
+### Keytab Creation
+
+```bash
+cd active-directory
+##################################
+# Keytab generation Job deployment
+##################################
+# Create secret with AD Password
+kubectl create secret generic keytab-password --from-literal=password=P@s5w0rd123!! -n arc
+
+# Kubernetes Service Account for Job to create secrets
+kubectl apply -f service-account.yaml
+
+# Kubernetes Job Deployment
+kubectl apply -f deploy-job.yaml
+
+# View keytab secret
+kubectl get secret sql-ad-yes-1-keytab-secret -n arc -o go-template='
+{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'
+
+# Create ADC
+
+
+```
+
+---
+
+### SQL MI Deployment
+
+```bash
+cd ../sql-mi
+
+######################################
+# Active Directory + SQL MI deployment
+######################################
+# Deploy Active Directory Connector
+kubectl apply -f ActiveDirectoryConnector.yaml
+
+# Deploy MI
+kubectl apply -f sql-ad-yes-1.yaml
+```
+
+And we create a DNS record in `FG-DC-1` with the Load Balancer's IP:
+```Powershell
+Add-DnsServerResourceRecordA -Name sql-ad-yes-1 -ZoneName fg.contoso.com -IPv4Address 20.88.161.153 # AKS LB
+```
+
+### Create Windows Logins
+
+Use SSMS from any of our Windows VMs to login to `sql-ad-yes-1.fg.contoso.com,31433`:
+
+```SQL
+USE [master]
+GO
+-- Create login for FG
+CREATE LOGIN [FG\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [FG\boor]
+GO
+-- Create login for MAPLE
+CREATE LOGIN [MAPLE\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [MAPLE\boor]
+GO
+```
