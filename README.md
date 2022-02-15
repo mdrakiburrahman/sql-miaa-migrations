@@ -577,9 +577,26 @@ CREATE LOGIN [FG\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
 GO
 ALTER SERVER ROLE [sysadmin] ADD MEMBER [FG\boor]
 GO
+-- ####################################################################################
+--            THIS WILL NOT WORK TILL UPCOMING KRB5.CONF FIX FOR CHILD DOMAINS
+-- ####################################################################################
 -- Create login for MAPLE
-CREATE LOGIN [MAPLE\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
-GO
-ALTER SERVER ROLE [sysadmin] ADD MEMBER [MAPLE\boor]
-GO
+-- CREATE LOGIN [MAPLE\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+-- GO
+-- ALTER SERVER ROLE [sysadmin] ADD MEMBER [MAPLE\boor]
+-- GO
 ```
+
+And we see the windows login get created:
+
+![Create FG Windows login in Arc MI](_images/windows-onboard-7.png)
+
+And we note that Windows login works:
+
+![Sign in as FG user](_images/windows-onboard-9.png)
+
+And note if we try to create the `MAPLE` user from the child domain, we see:
+
+![Create MAPLE Windows login in Arc MI](_images/windows-onboard-8.png)
+
+**INSERT MANUAL krb5.conf** fix
