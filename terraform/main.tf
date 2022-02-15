@@ -219,6 +219,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     dns_service_ip     = "192.168.64.10"
     docker_bridge_cidr = "172.17.0.1/16"
     service_cidr       = "192.168.64.0/19"
+    network_policy     = "azure"
   }
 
   lifecycle {

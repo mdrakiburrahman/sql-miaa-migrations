@@ -96,7 +96,7 @@ resource "azurerm_dev_test_global_vm_shutdown_schedule" "example" {
   location           = var.resource_group_location
   enabled            = true
 
-  daily_recurrence_time = "2300"
+  daily_recurrence_time = "0100"
   timezone              = "Eastern Standard Time"
 
   notification_settings {

@@ -1,7 +1,7 @@
 apiVersion: v1
 data:
-  password: <sqlauth-base64-encoded-password>
-  username: <sqlauth-base64-encoded-user>
+  password: YWNudG9yUFJFU1RPIQ==
+  username: Ym9vcg==
 kind: Secret
 metadata:
   name: sql-ad-yes-1-login-secret
@@ -40,7 +40,7 @@ spec:
       keytabSecret: sql-ad-yes-1-keytab-secret
   services:
     primary:
-      type: NodePort
+      type: LoadBalancer
       dnsName: sql-ad-yes-1.fg.contoso.com
       port: 31433
   storage:

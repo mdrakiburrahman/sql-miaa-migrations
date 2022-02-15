@@ -383,13 +383,13 @@ We run this directly in our `.devcontainer` which has the pre-reqs installed:
 cd kubernetes
 
 # Deployment variables
-export adminUsername="admin"
+export adminUsername='admin'
 export resourceGroup=$TF_VAR_resource_group_name
-export AZDATA_USERNAME="admin"
-export AZDATA_PASSWORD="P@s5w0rd123!!"
-export arcDcName="arc-dc"
-export azureLocation="eastus"
-export clusterName="aks-cni"
+export AZDATA_USERNAME='admin'
+export AZDATA_PASSWORD='P@s5w0rd123!!'
+export arcDcName='arc-dc'
+export azureLocation='eastus'
+export clusterName='aks-cni'
 export AZDATA_LOGSUI_USERNAME=$AZDATA_USERNAME
 export AZDATA_METRICSUI_USERNAME=$AZDATA_USERNAME
 export AZDATA_LOGSUI_PASSWORD=$AZDATA_PASSWORD
@@ -445,7 +445,7 @@ Import-Module ActiveDirectory
 # Arc SQL MI Users can be in any OU
 New-ADOrganizationalUnit -Name "ArcSQLMI" -Path "DC=FG,DC=CONTOSO,DC=COM"
 
-$pass = "P@s5w0rd123!!" | ConvertTo-SecureString -AsPlainText -Force
+$pass = "acntorPRESTO!" | ConvertTo-SecureString -AsPlainText -Force
 New-ADUser -Name "sql-ad-yes-1-account" `
            -UserPrincipalName "sql-ad-yes-1-account@fg.contoso.com" `
            -Path "OU=ArcSQLMI,DC=FG,DC=CONTOSO,DC=COM" `
@@ -531,7 +531,7 @@ cd active-directory
 # Keytab generation Job deployment
 ##################################
 # Create secret with AD Password
-kubectl create secret generic keytab-password --from-literal=password=P@s5w0rd123!! -n arc
+kubectl create secret generic keytab-password --from-literal=password=acntorPRESTO! -n arc
 
 # Kubernetes Service Account for Job to create secrets
 kubectl apply -f service-account.yaml
@@ -542,10 +542,6 @@ kubectl apply -f deploy-job.yaml
 # View keytab secret
 kubectl get secret sql-ad-yes-1-keytab-secret -n arc -o go-template='
 {{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'
-
-# Create ADC
-
-
 ```
 
 ---
@@ -554,7 +550,6 @@ kubectl get secret sql-ad-yes-1-keytab-secret -n arc -o go-template='
 
 ```bash
 cd ../sql-mi
-
 ######################################
 # Active Directory + SQL MI deployment
 ######################################
@@ -567,7 +562,7 @@ kubectl apply -f sql-ad-yes-1.yaml
 
 And we create a DNS record in `FG-DC-1` with the Load Balancer's IP:
 ```Powershell
-Add-DnsServerResourceRecordA -Name sql-ad-yes-1 -ZoneName fg.contoso.com -IPv4Address 20.88.161.153 # AKS LB
+Add-DnsServerResourceRecordA -Name sql-ad-yes-1 -ZoneName fg.contoso.com -IPv4Address 20.121.224.105 # AKS LB
 ```
 
 ### Create Windows Logins
