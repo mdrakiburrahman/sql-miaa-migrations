@@ -4,6 +4,9 @@ A terraform-built demo environment for migrating various SQL Servers to Arc SQL 
 We showcase the following entities in this repo:
 > `#TODO DIAGRAM`
 
+The Domain and DNS setup looks like this:
+> `#TODO DIAGRAM`
+
 ## Table of Contents <!-- omit in toc -->
 - [Infrastructure Deployment](#infrastructure-deployment)
   - [Dev Container](#dev-container)
@@ -12,6 +15,13 @@ We showcase the following entities in this repo:
   - [Create Root Domain fg.contoso.com](#create-root-domain-with-dc1)
   - [Join new Domain Controller DC2 to Root Domain](#join-new-dc2-to-root-domain)
   - [Create Child Domain maple.fg.contoso.com](#create-child-domain)
+  - [Add DNS Forwarding and Delegation](#add-dns-forwarding-and-delegation)
+  - [Domain join SQL Servers & Client](#domain-join-remaining-machines)
+  - [Client VM tooling](#client-vm-tooling)
+  - [Create Windows Logins in SQL](#create-windows-logins-in-sql)
+- [Arc Deployment](#post-deployment)
+- [Data Migration Setup](#migration-setup)
+- [Arc SQL MI Setup with AD](#arc-sql-mi-setup)
 
 ## Infrastructure Deployment
 
@@ -34,7 +44,7 @@ export TF_VAR_SPN_SUBSCRIPTION_ID=$subscriptionId
 export TF_VAR_VM_USER_PASSWORD=$localPassword # RDP password for VMs
 
 # Module specific
-export TF_VAR_resource_group_name='raki-sql-to-miaa-migration-rg'
+export TF_VAR_resource_group_name='raki-sql-to-miaa-migration-test-rg'
 
 # ---------------------
 # DEPLOY TERRAFORM
@@ -50,6 +60,7 @@ terraform apply -auto-approve
 terraform destory
 ```
 And we see:
+
 ![Resources Deployed](_images/terraform-resources.png)
 
 ## Post Deployment
@@ -199,6 +210,7 @@ Get-ADDomainController -Discover -Domain $domainName -Service "PrimaryDC","TimeS
 ```
 
 We see after logging in with `boor@maple.fg.contoso.com`:
+
 ![Logged in with Child Domain User](_images/child-domain-setup.png)
 
 And note we can also login with `boor@fg.contoso.com` into the `maple` machine - which is desirable:
@@ -212,3 +224,150 @@ The Child Domain is visible in the Root Domain Controller as well:
 ![Child Domain](_images/ad-trusts.png)
 
 ---
+
+### Add DNS Forwarding and Delegation
+
+On both `FG-DC-1` and `MAPLE-DC-1`, we need to configure DNS Delegation and Conditional Forwarding so any domain queries end up in the correct domain's DNS server:
+
+* Run on `FG-DC-1` for `maple.fg.contoso.com` goes to the `MAPLE-DC-1` DNS Server
+
+  ```PowerShell
+  Add-DnsServerZoneDelegation -Name "fg.contoso.com" -ChildZoneName "maple" -NameServer "maple-dc-1-vm.maple.fg.contoso.com" -IPAddress 192.168.1.4 -PassThru -Verbose
+  ```
+* Run on `MAPLE-DC-1` for `fg.contoso.com` goes to the `FG-DC-1` DNS Server
+
+  ```PowerShell
+  Add-DnsServerConditionalForwarderZone -Name "fg.contoso.com" -MasterServers "192.168.0.4" # FG-DC-1-vm
+  ```
+
+> Run `ipconfig /flushdns` each machine testing this update.
+
+`ping FG-DC-1-vm.fg.contoso.com`:
+
+We see on `FG-DC-1`:
+
+![DNS Delegation to MAPLE](_images/dns-delegation.png)
+
+![DNS Delegation to MAPLE](_images/dns-delegation-1.png)
+
+And we see on `MAPLE-DC-1`:
+
+`ping MAPLE-DC-1-vm.maple.fg.contoso.com`
+
+![Conditional Forwarding to FG](_images/conditional-forwardering-1.png)
+
+![Conditional Forwarding to FG](_images/conditional-forwardering.png)
+
+---
+
+### Domain Join remaining machines
+
+On each of the following `FG` machines, run the following PowerShell script as local admin:
+* `FG-CLIENT-vm`
+* `FG-SQL-2012-sql-vm`
+* `FG-SQL-2014-sql-vm`
+* `FG-SQL-2016-sql-vm`
+
+``` Powershell
+# Join to FG Domain
+$user = "FG\boor"
+$domainAdminPassword = "P@s5w0rd123!!"
+$domainName = 'fg.contoso.com'
+$pass = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
+$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, $pass
+add-computer –domainname $domainName -Credential $Credential -restart –force
+```
+
+We see:
+
+![FG Machines](_images/fg-pc.png)
+
+And for `MAPLE-SQL-2019-sql-vm`:
+
+``` Powershell
+# Join to MAPLE Domain
+$user = "MAPLE\boor"
+$domainAdminPassword = "P@s5w0rd123!!"
+$domainName = 'maple.fg.contoso.com'
+$pass = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
+$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, $pass
+add-computer –domainname $domainName -Credential $Credential -restart –force
+```
+
+![MAPLE Machines](_images/maple-pc.png)
+
+---
+
+### Client VM tooling
+
+We install a few tools on `FG-CLIENT-vm` for demo purposes later by signing in as `boor@fg.contoso.com`:
+
+```Powershell
+# Install chocolatey
+iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+
+# Install apps
+$chocolateyAppList = 'azure-cli,kubernetes-cli,vscode,kubernetes-helm,grep,ssms'
+
+$appsToInstall = $chocolateyAppList -split "," | foreach { "$($_.Trim())" }
+
+foreach ($app in $appsToInstall)
+{
+    Write-Host "Installing $app"
+    & choco install $app /y -Force| Write-Output
+}
+
+# Kubectl alias
+New-Item -path alias:kubectl -value 'C:\ProgramData\chocolatey\lib\kubernetes-cli\tools\kubernetes\client\bin\kubectl.exe'
+```
+
+---
+
+### Create Windows logins in SQL
+
+Now, we must RDP in as the **local** user `boor` and not the domain user (`FG\boor` or `MAPLE\boor`) - so that we can sign into our 4 SQL Servers and create Windows AD logins.
+
+> This is because the SQL Marketplace images created local user logins by default.
+
+For example:
+
+![Sign in as local user](_images/windows-onboard.png)
+
+Launch SSMS and sign in:
+
+![Sign in as local user](_images/windows-onboard-1.png)
+
+Perform on:
+* `FG-SQL-2012-sql-vm`
+* `FG-SQL-2014-sql-vm`
+* `FG-SQL-2016-sql-vm`
+* `MAPLE-SQL-2019-sql-vm`
+
+``` SQL
+USE [master]
+GO
+-- Create login for FG
+CREATE LOGIN [FG\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [FG\boor]
+GO
+-- Create login for MAPLE
+CREATE LOGIN [MAPLE\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [MAPLE\boor]
+GO
+```
+
+We create the windows logins on all 4 SQL servers:
+
+![Domain logins successfully created](_images/windows-onboard-2.png)
+
+From `FG-SQL-2014`, and `MAPLE-SQL-2019`, login to all 4 instances as Windows AD login:
+
+![Test login to all instances with each domain](_images/windows-onboard-6.png)
+
+---
+
+### Arc SQL MI Setup
+
+We deploy in _Indirect_ mode since it's a bit faster but this will work identically in _Direct_:
