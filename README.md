@@ -25,6 +25,7 @@ We showcase the following entities in this repo:
   - [Keytab creation](#keytab-creation)
   - [SQL MI Deployment](#sql-mi-deployment)
   - [Create Windows Logins](#create-windows-logins)
+  - [Kerberos workaround for MAPLE](#kerberos-workaround-for-maple)
 
 ## Infrastructure Deployment
 
@@ -599,4 +600,150 @@ And note if we try to create the `MAPLE` user from the child domain, we see:
 
 ![Create MAPLE Windows login in Arc MI](_images/windows-onboard-8.png)
 
-**INSERT MANUAL krb5.conf** fix
+This is a bugfix for supporting child domains that will come in soon. Here's a workaround.
+
+---
+
+### ldapsearch debugging
+
+Copy the binary into the container
+
+```shell
+# Copy LDAPSEARCH
+kubectl cp ldapsearch arc/sql-ad-yes-1-0:/var/run/etc/ldapsearch -c arc-sqlmi
+
+# Shell in
+kubectl exec -it sql-ad-yes-1-0 -n arc -c arc-sqlmi -- /bin/sh
+
+# Displays the contents of a keytab
+klist -kte /var/run/secrets/managed/keytabs/mssql/mssql.keytab
+
+```
+
+
+
+---
+
+### Kerberos workaround for MAPLE
+
+> Every reboot of the container will mean this needs to be done again.
+
+Let's take a look at the [`krb5.conf`](https://web.mit.edu/kerberos/krb5-1.12/doc/admin/conf_files/krb5_conf.html) file that was created in the SQL MI Pod:
+
+```bash
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- cat /var/run/etc/krb5.conf
+```
+
+We see:
+```
+[libdefaults]
+    default_realm = FG.CONTOSO.COM
+    dns_lookup_realm = false
+    dns_lookup_kdc = false
+    dns_canonicalize_hostname = false
+
+[realms]
+    FG.CONTOSO.COM={
+        kdc = FG-DC-1-vm.fg.contoso.com
+        kdc = FG-DC-2-vm.fg.contoso.com
+        kdc = MAPLE-DC-1-vm.maple.fg.contoso.com
+
+        admin_server = FG-DC-1-vm.fg.contoso.com
+        default_domain = fg.contoso.com
+    }
+
+[domain_realm]
+    fg.contoso.com = FG.CONTOSO.COM
+    .fg.contoso.com = FG.CONTOSO.COM
+```
+
+We are going to replace with a smaller file that uses lookups as documented [here](https://web.mit.edu/kerberos/krb5-1.12/doc/admin/conf_files/krb5_conf.html#libdefaults):
+
+```
+[libdefaults]
+    default_realm = FG.CONTOSO.COM
+    dns_lookup_realm = false
+    dns_lookup_kdc = false
+    dns_canonicalize_hostname = false
+
+[realms]
+    FG.CONTOSO.COM={
+        kdc = FG-DC-1-vm.fg.contoso.com
+        kdc = FG-DC-2-vm.fg.contoso.com
+        admin_server = FG-DC-1-vm.fg.contoso.com
+        default_domain = fg.contoso.com
+    }
+
+    MAPLE.FG.CONTOSO.COM={
+        kdc = MAPLE-DC-1-vm.maple.fg.contoso.com
+        admin_server = MAPLE-DC-1-vm.maple.fg.contoso.com
+        default_domain = maple.fg.contoso.com
+    }
+
+[domain_realm]
+    fg.contoso.com = FG.CONTOSO.COM
+    .fg.contoso.com = FG.CONTOSO.COM
+    maple.fg.contoso.com = MAPLE.FG.CONTOSO.COM
+    .maple.fg.contoso.com = MAPLE.FG.CONTOSO.COM
+```
+
+
+```bash
+cd kubernetes/active-directory
+
+# Move old one to backup
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- mv /var/run/etc/krb5.conf /var/run/etc/krb5.conf.bak 
+
+# Copy local krb5.conf over to pod
+kubectl cp krb5.conf arc/sql-ad-yes-1-0:/var/run/etc/krb5.conf -c arc-sqlmi
+
+# Verify
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- cat /var/run/etc/krb5.conf
+
+# Tail these 2 Kerberos logs to see what happens when you create the users
+# 1: security.log
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- tail /var/opt/mssql/log/security.log --follow
+
+# 2: errorlog
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- tail /var/opt/mssql/log/errorlog --follow
+
+```
+
+Now we run the following for `MAPLE`:
+
+```sql
+USE [master]
+GO
+-- Create login for MAPLE
+CREATE LOGIN [MAPLE\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [MAPLE\boor]
+GO
+```
+
+In our logs:
+```bash
+# 1: security.log
+
+# Successful for FG\boor
+02/16/2022 13:51:16.571453412 Debug [security.kerberos] <0000001361/0x00000330> Processing SSPI operation 0x0000000D
+02/16/2022 13:51:16.673826368 Debug [security.kerberos] <0000001361/0x00000330> SSPI operation 0x0000000D returned status: [Status: 0x0 Success errno = 0x0(0) Success]
+02/16/2022 13:51:16.674009670 Debug [security.kerberos.libos] <0000000872/0x00000214> LookupAccountName() return value: 0x00000001
+
+# Successful for MAPLE\boor
+02/16/2022 14:41:38.820451426 Debug [security.kerberos] <0000001361/0x00000330> Processing SSPI operation 0x0000000D
+02/16/2022 14:41:38.834570701 Debug [security.kerberos] <0000001361/0x00000330> SSPI operation 0x0000000D returned status: [Status: 0x0 Success errno = 0x0(0) Success]
+02/16/2022 14:41:38.834778403 Debug [security.kerberos.libos] <0000000981/0x000002cc> LookupAccountName() return value: 0x00000001
+
+# 2: errorlog
+# Nothing new in errorlog
+
+```
+
+And we see the user get created:
+
+![Create MAPLE Windows login in Arc MI after workaround](_images/windows-onboard-10.png)
+
+We can now sign in with `MAPLE\boor`:
+
+![Sign in as MAPLE user](_images/windows-onboard-9.png)
