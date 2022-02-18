@@ -769,3 +769,206 @@ We see:
 ![SQL Backups restored](_images/sql-baks.png)
 
 ### DAG from SQL 2019 to MIAA
+
+1. Get the Mirroring endpoint cert out of our MIAA Pod:
+
+```bash
+cd distributed-ag
+
+# Pull out .PEM from Pod
+instance='sql-ad-yes-1'
+az sql mi-arc get-mirroring-cert \
+             --cert-file "$instance.pem" \
+             --name $instance \
+             --k8s-namespace arc \
+             --use-k8s
+# result write to file sql-ad-yes-1.pem: -----BEGIN CERTIFICATE-----
+# MIIDTTCCAjWgAwIBAgIIAvXErfDIUg4wDQYJKoZIhvcNAQELBQAwKDEmMCQGA1UEAxMdQ2x1c3Rl
+# ...
+# ELusPb3xiiGRKs7ufrf1YusZXRK4xfHrNcN5ctNAskQB5Z7RG+bphXBG1qeIrKX0fE9j
+# -----END CERTIFICATE-----
+
+# Convert to .CER for SQL Server 2019
+openssl x509 -inform PEM -in $instance.pem -outform DER -out $instance.cer
+```
+
+> Now we can use any creative method to get the .cer file into our MAPLE-SQL-2019 Azure VM from this dev container 😊 (I used a SAS URL.)
+
+We also note the mirroring endpoint for MIAA is `sql-ad-yes-1.fg.contoso.com:5022` - since we added a DNS entry in Windows earlier and this listens on Port 5022.
+
+---
+
+2. On `MAPLE-SQL-2019`, first we enable AlwaysOn AGs:
+
+```PowerShell
+Enable-SqlAlwaysOn -ServerInstance "MAPLE-SQL-2019" -Force
+```
+
+Then, create Master Key and locally signed certificate for the AG Mirroring Endpoint:
+
+```sql
+-- Create Master Key for cert based operations
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'acntorPRESTO!'
+
+-- Create certificte for this AG mirroring endpoint
+-- Backup public key to local C:\ Drive
+CREATE CERTIFICATE server_ag_cert WITH SUBJECT = 'Local AG Certificate';
+BACKUP CERTIFICATE server_ag_cert to file = N'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\MAPLE-SQL-2019.cer';
+
+```
+> Copy the file into this container using some creative method
+
+We see:
+
+![Cert backup](_images/dag-1.png)
+
+Then, we create the AG mirroring endpoint on Port `5022` and onboard the DB:
+
+```sql
+-- Create AG mirroring endpoint with this cert as the authentication mechanism
+CREATE ENDPOINT [Hadr_endpoint]
+    STATE = STARTED 
+	AS TCP (LISTENER_IP = (0.0.0.0), LISTENER_PORT = 5022)
+    FOR DATA_MIRRORING (
+        ROLE = ALL,
+        AUTHENTICATION = CERTIFICATE server_ag_cert,
+        ENCRYPTION = REQUIRED ALGORITHM AES
+	);
+
+-- Create AG
+CREATE AVAILABILITY GROUP [SQL2019-AG1]
+WITH (DB_FAILOVER = ON, CLUSTER_TYPE = NONE)
+FOR 
+REPLICA ON N'MAPLE-SQL-2019' WITH (ENDPOINT_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022',
+    FAILOVER_MODE = MANUAL,  
+    AVAILABILITY_MODE = SYNCHRONOUS_COMMIT,   
+	PRIMARY_ROLE(ALLOW_CONNECTIONS = ALL),SECONDARY_ROLE(ALLOW_CONNECTIONS = ALL),
+    BACKUP_PRIORITY = 50,   
+    SEEDING_MODE = AUTOMATIC);
+
+-- Change Database in Full Recovery mode to add to AG
+ALTER DATABASE AdventureWorks2019 SET RECOVERY FULL
+GO
+BACKUP DATABASE AdventureWorks2019 TO DISK = N'NUL'
+GO
+
+-- Add Database into created AG
+ALTER AVAILABILITY GROUP [SQL2019-AG1] ADD DATABASE AdventureWorks2019;  
+GO  
+
+-- Create login
+CREATE LOGIN miaa_login WITH PASSWORD = 'acntorPRESTO!';
+
+-- Create user for login
+CREATE USER miaa_user FOR LOGIN miaa_login;
+
+-- Allow authorization via the cert we pulled from MIAA
+CREATE CERTIFICATE miaa_certificate   
+    AUTHORIZATION miaa_user
+    FROM FILE = N'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\sql-ad-yes-1.cer';
+
+-- Allow MIAA to connect to the Mirroring endpoint 
+GRANT CONNECT ON ENDPOINT::[Hadr_endpoint] TO [miaa_login]
+
+-- Create DAG
+CREATE AVAILABILITY GROUP [DAG2019]  
+   WITH (DISTRIBUTED)   
+   AVAILABILITY GROUP ON  
+      'SQL2019-AG1' WITH    
+      (   
+		LISTENER_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022',    
+        AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
+        FAILOVER_MODE = MANUAL,   
+        SEEDING_MODE = AUTOMATIC
+	  ), 
+      'sql-ad-yes-1' WITH    
+      (   
+         LISTENER_URL = 'tcp://sql-ad-yes-1.fg.contoso.com:5022',   
+         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
+         FAILOVER_MODE = MANUAL,   
+         SEEDING_MODE = AUTOMATIC   
+      );    
+GO
+```
+
+We see:
+
+![SQL DAG setup](_images/dag-2.png)
+
+---
+
+3. On MIAA, create the DAG:
+
+```bash
+# Convert SQL 2019 cert to PEM
+openssl x509 -inform der -in MAPLE-SQL-2019.cer -outform pem -out MAPLE-SQL-2019.pem
+
+# Tail logs in Controller to see DAG getting created
+kubectl logs control-g6tkq -n arc -c controller --follow
+
+# Variables
+dag_cr_name='dag2019' # CRD name
+dag_sql_name='DAG2019' # Same name as T-SQL DAG above
+local_instance='sql-ad-yes-1' # MIAA instance
+remote_instance='MAPLE-SQL-2019' # SQL 2019 instance name
+sql_ag_endpoint='TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022' # DNS resolvable endpoint for SQL 2019 AG listener
+
+# Create DAG on MIAA
+az sql mi-arc dag create \
+              --name=$dag_cr_name \
+              --dag-name=$dag_sql_name \
+              --local-instance-name=$local_instance \
+              --remote-instance-name=$remote_instance \
+              --role secondary \
+              --remote-mirroring-url=$sql_ag_endpoint \
+              --remote-mirroring-cert-file="MAPLE-SQL-2019.pem" \
+              --k8s-namespace=arc \
+              --use-k8s
+
+# In the logs
+# GRANT CONNECT ON ENDPOINT::hadr_endpoint TO [DAG_MAPLE-SQL-2019_Login];
+# 2022-02-18 03:58:21.8481 | INFO  | DistributedAgStateMachine:sql-ad-yes-1::CreatingDagTransition : Done with add certificate to mirroring endpoint 
+# 2022-02-18 03:58:21.8530 | INFO  | DistributedAgStateMachine:sql-ad-yes-1::AddDistributedAgForRemote : connection : sql-ad-yes-1,sql-ad-yes-1-p-svc  query = 
+# ALTER AVAILABILITY GROUP [DAG2019]
+#    JOIN
+#    AVAILABILITY GROUP ON 
+#       'sql-ad-yes-1' WITH 
+#       (
+#          LISTENER_URL = 'tcp://localhost:5022',
+#          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,
+#          FAILOVER_MODE = MANUAL,
+#          SEEDING_MODE = AUTOMATIC 
+#       ),
+#       'MAPLE-SQL-2019' WITH 
+#       (   
+#          LISTENER_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022', 
+#          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
+#          FAILOVER_MODE = MANUAL,
+#          SEEDING_MODE = AUTOMATIC
+#       );
+  
+# 2022-02-18 03:58:21.9448 | INFO  | Succeeded: 
+# ALTER AVAILABILITY GROUP [DAG2019]
+#    JOIN
+#    AVAILABILITY GROUP ON 
+#       'sql-ad-yes-1' WITH 
+#       (
+#          LISTENER_URL = 'tcp://localhost:5022',
+#          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,
+#          FAILOVER_MODE = MANUAL,
+#          SEEDING_MODE = AUTOMATIC 
+#       ),
+#       'MAPLE-SQL-2019' WITH 
+#       (   
+#          LISTENER_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022', 
+#          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
+#          FAILOVER_MODE = MANUAL,
+#          SEEDING_MODE = AUTOMATIC
+#       );
+
+# And we see
+kubectl get dag -n arc
+
+# NAME      STATUS      RESULTS   AGE
+# dag2019   Succeeded             13s
+```
