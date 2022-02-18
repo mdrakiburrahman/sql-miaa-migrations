@@ -19,7 +19,7 @@ module "vnet" {
   address_space       = ["192.168.0.0/16"]
   subnet_prefixes     = ["192.168.0.0/24", "192.168.1.0/24", "192.168.2.0/24", "192.168.3.0/24", "192.168.48.0/21", "192.168.144.64/27"]
   subnet_names        = ["FG-DC", "MAPLE-DC", "FG-SQL", "MAPLE-SQL", "AKS", "AzureBastionSubnet"]
-  dns_servers         = ["192.168.0.4", "192.168.1.4", "168.63.129.16"] # The first IPs in FG and MAPLE subnets, we will statically assign these to the VMs
+  dns_servers         = ["192.168.0.4", "192.168.1.4"] #, "168.63.129.16"] # The first IPs in FG and MAPLE subnets, we will statically assign these to the VMs
 
   tags = var.tags
 }
@@ -98,26 +98,7 @@ module "maple_dc_1" {
 
   tags = var.tags
 }
-# ---------------------------------------------------------------------------------------------------------------------
-# CLIENT VM
-# ---------------------------------------------------------------------------------------------------------------------
-# Windows 10 Client machine for doing work with SSMS etc.
-module "client_vm" {
-  depends_on = [module.vnet]
 
-  source                  = "./modules/vm-module" # Local path to VM module
-  prefix                  = "FG-CLIENT"
-  resource_group_location = var.resource_group_location
-  resource_group_name     = var.resource_group_name
-  subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "FG-DC")
-  private_ip              = "192.168.0.21"
-  user_password           = var.VM_USER_PASSWORD
-  vm_image_publisher      = "microsoftwindowsdesktop"
-  vm_image_offer          = "Windows-10"
-  vm_image_sku            = "win10-21h2-ent"
-
-  tags = var.tags
-}
 # ---------------------------------------------------------------------------------------------------------------------
 # SQL SERVERS
 # ---------------------------------------------------------------------------------------------------------------------

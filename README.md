@@ -486,16 +486,18 @@ foreach( $result in $results ) {
 	Write-host ""
 }
 
+##########################################################################################
+#                                      RUN ON FG-DC-1
+##########################################################################################
+# 3A. Reverse Lookup Zone - Pointer - FG
 #############################################
-# 3. Reverse Lookup Zone - Pointer - FG-DC-1
-#############################################
-# Add a reverse lookup zone
+# Add a reverse lookup zone - FG Subnet
 Add-DnsServerPrimaryZone -NetworkId "192.168.0.0/24" -ReplicationScope Domain
 
 # Get reverse zone name
 $Zones = @(Get-DnsServerZone)
 ForEach ($Zone in $Zones) {
-    if (-not $($Zone.IsAutoCreated) -and ($Zone.IsReverseLookupZone)) {
+    if ((-not $($Zone.IsAutoCreated)) -and ($Zone.IsReverseLookupZone) -and ($Zone.ZoneName.Split(".")[0] -eq "0")) {
        $Reverse = $Zone.ZoneName
     }
 }
@@ -504,22 +506,27 @@ ForEach ($Zone in $Zones) {
 Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 4 -PTRDomainName FG-DC-1-vm.fg.contoso.com # 4 is because of the IP address of the DC
 Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 5 -PTRDomainName FG-DC-2-vm.fg.contoso.com # 5 is because of the IP address of the DC
 
-################################################
-#              RUN ON MAPLE-DC-1
-################################################
-# 4. Reverse Lookup Zone - Pointer - MAPLE-DC-1
-################################################
-# Add a reverse lookup zone
+#############################################
+# 3B. Reverse Lookup Zone - Pointer - MAPLE
+#############################################
+# Add a reverse lookup zone - MAPLE Subnet
 Add-DnsServerPrimaryZone -NetworkId "192.168.1.0/24" -ReplicationScope Domain
 
+# Get reverse zone name
 $Zones = @(Get-DnsServerZone)
 ForEach ($Zone in $Zones) {
-    if (-not $($Zone.IsAutoCreated) -and ($Zone.IsReverseLookupZone)) {
+    if ((-not $($Zone.IsAutoCreated)) -and ($Zone.IsReverseLookupZone) -and ($Zone.ZoneName.Split(".")[0] -eq "1")) {
        $Reverse = $Zone.ZoneName
     }
 }
 
+# Add a PTR record to the Reverse Lookup Zone for the Domain Controller. 
 Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 4 -PTRDomainName MAPLE-DC-1-vm.maple.fg.contoso.com
+
+##########################################################################################
+#                          RUN 3 AND 4 ABOVE ON MAPLE-DC-1 AS WELL
+##########################################################################################
+
 ```
 
 ---
@@ -604,29 +611,9 @@ This is a bugfix for supporting child domains that will come in soon. Here's a w
 
 ---
 
-### ldapsearch debugging
-
-Copy the binary into the container
-
-```shell
-# Copy LDAPSEARCH
-kubectl cp ldapsearch arc/sql-ad-yes-1-0:/var/run/etc/ldapsearch -c arc-sqlmi
-
-# Shell in
-kubectl exec -it sql-ad-yes-1-0 -n arc -c arc-sqlmi -- /bin/sh
-
-# Displays the contents of a keytab
-klist -kte /var/run/secrets/managed/keytabs/mssql/mssql.keytab
-
-```
-
-
-
----
-
 ### Kerberos workaround for MAPLE
 
-> Every reboot of the container will mean this needs to be done again.
+> ‼ Every reboot of the container will mean this needs to be done again in order to login from `MAPLE`.
 
 Let's take a look at the [`krb5.conf`](https://web.mit.edu/kerberos/krb5-1.12/doc/admin/conf_files/krb5_conf.html) file that was created in the SQL MI Pod:
 
@@ -662,20 +649,15 @@ We are going to replace with a smaller file that uses lookups as documented [her
 ```
 [libdefaults]
     default_realm = FG.CONTOSO.COM
-    dns_lookup_realm = false
-    dns_lookup_kdc = false
-    dns_canonicalize_hostname = false
+    dns_lookup_realm = true
+    dns_lookup_kdc = true
 
 [realms]
     FG.CONTOSO.COM={
-        kdc = FG-DC-1-vm.fg.contoso.com
-        kdc = FG-DC-2-vm.fg.contoso.com
         admin_server = FG-DC-1-vm.fg.contoso.com
         default_domain = fg.contoso.com
     }
-
     MAPLE.FG.CONTOSO.COM={
-        kdc = MAPLE-DC-1-vm.maple.fg.contoso.com
         admin_server = MAPLE-DC-1-vm.maple.fg.contoso.com
         default_domain = maple.fg.contoso.com
     }
@@ -687,6 +669,7 @@ We are going to replace with a smaller file that uses lookups as documented [her
     .maple.fg.contoso.com = MAPLE.FG.CONTOSO.COM
 ```
 
+We copy the `krb5.conf` file into the container:
 
 ```bash
 cd kubernetes/active-directory
@@ -700,13 +683,9 @@ kubectl cp krb5.conf arc/sql-ad-yes-1-0:/var/run/etc/krb5.conf -c arc-sqlmi
 # Verify
 kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- cat /var/run/etc/krb5.conf
 
-# Tail these 2 Kerberos logs to see what happens when you create the users
-# 1: security.log
+# Tail the Kerberos logs to see what happens when you create the users
+# security.log
 kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- tail /var/opt/mssql/log/security.log --follow
-
-# 2: errorlog
-kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- tail /var/opt/mssql/log/errorlog --follow
-
 ```
 
 Now we run the following for `MAPLE`:
@@ -721,10 +700,8 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [MAPLE\boor]
 GO
 ```
 
-In our logs:
+In `security.log`:
 ```bash
-# 1: security.log
-
 # Successful for FG\boor
 02/16/2022 13:51:16.571453412 Debug [security.kerberos] <0000001361/0x00000330> Processing SSPI operation 0x0000000D
 02/16/2022 13:51:16.673826368 Debug [security.kerberos] <0000001361/0x00000330> SSPI operation 0x0000000D returned status: [Status: 0x0 Success errno = 0x0(0) Success]
@@ -734,10 +711,6 @@ In our logs:
 02/16/2022 14:41:38.820451426 Debug [security.kerberos] <0000001361/0x00000330> Processing SSPI operation 0x0000000D
 02/16/2022 14:41:38.834570701 Debug [security.kerberos] <0000001361/0x00000330> SSPI operation 0x0000000D returned status: [Status: 0x0 Success errno = 0x0(0) Success]
 02/16/2022 14:41:38.834778403 Debug [security.kerberos.libos] <0000000981/0x000002cc> LookupAccountName() return value: 0x00000001
-
-# 2: errorlog
-# Nothing new in errorlog
-
 ```
 
 And we see the user get created:
