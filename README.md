@@ -15,7 +15,6 @@ We showcase the following entities in this repo:
   - [Create Child Domain maple.fg.contoso.com](#create-child-domain)
   - [Add DNS Forwarding and Delegation](#add-dns-forwarding-and-delegation)
   - [Domain join SQL Servers & Client](#domain-join-remaining-machines)
-  - [Client VM tooling](#client-vm-tooling)
   - [Create Windows Logins in SQL](#create-windows-logins-in-sql)
 - [Arc Deployment](#post-deployment)
 - [Data Migration Setup](#migration-setup)
@@ -299,31 +298,6 @@ add-computer –domainname $domainName -Credential $Credential -restart –force
 ```
 
 ![MAPLE Machines](_images/maple-pc.png)
-
----
-
-### Client VM tooling
-
-We install a few tools on `FG-CLIENT-vm` for demo purposes later by signing in as `boor@fg.contoso.com`:
-
-```Powershell
-# Install chocolatey
-iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-
-# Install apps
-$chocolateyAppList = 'azure-cli,kubernetes-cli,vscode,kubernetes-helm,grep,ssms'
-
-$appsToInstall = $chocolateyAppList -split "," | foreach { "$($_.Trim())" }
-
-foreach ($app in $appsToInstall)
-{
-    Write-Host "Installing $app"
-    & choco install $app /y -Force| Write-Output
-}
-
-# Kubectl alias
-New-Item -path alias:kubectl -value 'C:\ProgramData\chocolatey\lib\kubernetes-cli\tools\kubernetes\client\bin\kubectl.exe'
-```
 
 ---
 
@@ -613,8 +587,6 @@ This is a bugfix for supporting child domains that will come in soon. Here's a w
 
 ### Kerberos workaround for MAPLE
 
-> ‼ Every reboot of the container will mean this needs to be done again in order to login from `MAPLE`.
-
 Let's take a look at the [`krb5.conf`](https://web.mit.edu/kerberos/krb5-1.12/doc/admin/conf_files/krb5_conf.html) file that was created in the SQL MI Pod:
 
 ```bash
@@ -719,4 +691,6 @@ And we see the user get created:
 
 We can now sign in with `MAPLE\boor`:
 
-![Sign in as MAPLE user](_images/windows-onboard-9.png)
+![Sign in as MAPLE user](_images/windows-onboard-11.png)
+
+> ‼ Every reboot of the container will mean this new krb5.conf file needs to be copied again in order to login from `MAPLE` - until the fix is in.
