@@ -19,7 +19,7 @@ module "vnet" {
   address_space       = ["192.168.0.0/16"]
   subnet_prefixes     = ["192.168.0.0/24", "192.168.1.0/24", "192.168.2.0/24", "192.168.3.0/24", "192.168.48.0/21", "192.168.144.64/27"]
   subnet_names        = ["FG-DC", "MAPLE-DC", "FG-SQL", "MAPLE-SQL", "AKS", "AzureBastionSubnet"]
-  dns_servers         = ["192.168.0.4", "192.168.1.4"] #, "168.63.129.16"] # The first IPs in FG and MAPLE subnets, we will statically assign these to the VMs
+  dns_servers         = ["192.168.0.4", "192.168.1.4", "168.63.129.16"] # The first IPs in FG and MAPLE subnets, we will statically assign these to the VMs
 
   tags = var.tags
 }

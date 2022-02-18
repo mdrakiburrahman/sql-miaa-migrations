@@ -25,6 +25,8 @@ We showcase the following entities in this repo:
   - [SQL MI Deployment](#sql-mi-deployment)
   - [Create Windows Logins](#create-windows-logins)
   - [Kerberos workaround for MAPLE](#kerberos-workaround-for-maple)
+- [MIAA migration setup](#miaa-migration-setup)
+  - [DAG from SQL 2019](#dag-from-SQL-2019-to-miaa)
 
 ## Infrastructure Deployment
 
@@ -694,3 +696,76 @@ We can now sign in with `MAPLE\boor`:
 ![Sign in as MAPLE user](_images/windows-onboard-11.png)
 
 > ‼ Every reboot of the container will mean this new krb5.conf file needs to be copied again in order to login from `MAPLE` - until the fix is in.
+
+---
+
+# MIAA Migration Setup
+
+Here we will showcase the various migration scenarios that are possible with Arc SQL MI.
+
+First, let's download and restore AdventureWorks in all of our SQL Server Instances:
+
+**Download**
+```PowerShell
+# Run on all if PowerShell complains about SSL
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+# FG-SQL-2012
+wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2012.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2012.bak"
+
+# FG-SQL-2014
+wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2014.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2014.bak"
+
+# FG-SQL-2016
+wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2016.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2016.bak"
+
+# MAPLE-SQL-2019
+wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2019.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2019.bak"
+```
+
+**Restore**
+```SQL
+
+-- FG-SQL-2012
+USE [master]
+RESTORE DATABASE [AdventureWorks2012] 
+FROM  DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2012.bak' 
+WITH MOVE 'AdventureWorksLT2008_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2012_Data.mdf',
+MOVE 'AdventureWorksLT2008_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2012_log.ldf',
+FILE = 1,  NOUNLOAD,  STATS = 5
+GO
+
+-- FG-SQL-2014
+USE [master]
+RESTORE DATABASE [AdventureWorks2014] 
+FROM  DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2014.bak' 
+WITH MOVE 'AdventureWorksLT2008_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2014_Data.mdf',
+MOVE 'AdventureWorksLT2008_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2014_log.ldf',
+FILE = 1,  NOUNLOAD,  STATS = 5
+GO
+
+-- FG-SQL-2016
+USE [master]
+RESTORE DATABASE [AdventureWorks2016] 
+FROM  DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2016.bak' 
+WITH MOVE 'AdventureWorksLT2012_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2016_Data.mdf',
+MOVE 'AdventureWorksLT2012_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2016_log.ldf',
+FILE = 1,  NOUNLOAD,  STATS = 5
+GO
+
+-- MAPLE-SQL-2019
+USE [master]
+RESTORE DATABASE [AdventureWorks2019] 
+FROM  DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2019.bak' 
+WITH MOVE 'AdventureWorksLT2012_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2016_Data.mdf',
+MOVE 'AdventureWorksLT2012_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2016_log.ldf',
+FILE = 1,  NOUNLOAD,  STATS = 5
+GO
+
+```
+
+We see:
+
+![SQL Backups restored](_images/sql-baks.png)
+
+### DAG from SQL 2019 to MIAA
