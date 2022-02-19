@@ -1090,7 +1090,7 @@ az sql mi-arc dag delete \
 
 ---
 
-# [MIAA - Log shipping migration setup
+# MIAA Log shipping migration setup
 
 ## DAG from SQL 2016 wont work
 
