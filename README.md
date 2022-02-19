@@ -1084,7 +1084,7 @@ az sql mi-arc dag delete \
 
 ---
 
-# DAG from Azure SQL MI to MIAA
+## DAG from Azure SQL MI to MIAA
 
 > TBD on feature support
 
