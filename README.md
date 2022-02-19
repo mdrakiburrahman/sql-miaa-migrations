@@ -27,7 +27,10 @@ We showcase the following entities in this repo:
   - [Create Windows Logins](#create-windows-logins)
   - [Kerberos workaround for MAPLE](#kerberos-workaround-for-maple)
 - [MIAA migration setup](#miaa-migration-setup)
-  - [DAG from SQL 2019](#dag-from-SQL-2019-to-miaa)
+  - [DAG from SQL 2019](#dag-from-SQL-2019-to-MIAA)
+  - [DAG from SQL 2017](#dag-from-SQL-2017-to-MIAA)
+  - [DAG from SQL 2016](#dag-from-SQL-2016-to-MIAA)
+  - [DAG from SQL 2022](#dag-from-SQL-2022-to-MIAA)
 
 ## Infrastructure Deployment
 
@@ -778,7 +781,7 @@ We see:
 
 ![SQL Backups restored](_images/sql-baks.png)
 
-### DAG from SQL 2019 to MIAA
+## DAG from SQL 2019 to MIAA
 
 1. Get the Mirroring endpoint cert out of our MIAA Pod:
 
@@ -1064,3 +1067,20 @@ az sql mi-arc dag delete \
             --k8s-namespace=arc \
             --use-k8s
 ```
+
+## DAG from SQL 2017 to MIAA
+
+> The steps for a SQL 2017 are identical to 2019 above.
+
+## DAG from SQL 2016 to MIAA
+
+Currently, there is a blocking feature in setting up Distributed AGs in SQL 2016, basically, the DAG with a seed expects MIAA on Linux to have the same MDF, LDF filepath as the Windows in SQL 2016 machine `C:\` drive, which is impossible
+
+
+Let's demonstrate:
+
+```sql
+SELECT @@VERSION
+```
+
+## DAG from SQL 2022 to MIAA
