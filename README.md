@@ -1,8 +1,7 @@
 # SQL Server to Arc SQL MI - Migration environment
-> `#TODO HEADER WITH SQL SERVERS, SQL MI AND TERRAFORM`
+
 A terraform-built demo environment for migrating various SQL Servers to Arc SQL MI.
 
-We showcase the following entities in this repo:
 > `#TODO DIAGRAM | Domain, DNS`
 
 ## Table of Contents <!-- omit in toc -->
@@ -26,11 +25,14 @@ We showcase the following entities in this repo:
   - [SQL MI Deployment](#sql-mi-deployment)
   - [Create Windows Logins](#create-windows-logins)
   - [Kerberos workaround for MAPLE](#kerberos-workaround-for-maple)
-- [MIAA migration setup](#miaa-migration-setup)
+- [MIAA - DAG migration setup](#miaa-dag-migration-setup)
   - [DAG from SQL 2019](#dag-from-SQL-2019-to-MIAA)
   - [DAG from SQL 2017](#dag-from-SQL-2017-to-MIAA)
-  - [DAG from SQL 2016](#dag-from-SQL-2016-to-MIAA)
   - [DAG from SQL 2022](#dag-from-SQL-2022-to-MIAA)
+  - [DAG from Azure SQL MI](#dag-from-Azure-SQL-MI-to-MIAA)
+- [MIAA - Log shipping migration setup](#miaa-log-shipping-migration-setup)
+  - [Why DAG on SQL 2016 won't work](#dag-from-SQL-2016-wont-work)
+  - [Log shipping from SQL 2012-2016 to 2019, DAG over](#log-shipping-from-SQL-2012-to-2016-to-MIAA)
 
 ## Infrastructure Deployment
 
@@ -1068,19 +1070,61 @@ az sql mi-arc dag delete \
             --use-k8s
 ```
 
+---
+
 ## DAG from SQL 2017 to MIAA
 
-> The steps for a SQL 2017 are identical to 2019 above.
+> The steps for a SQL 2017 are identical to 2019 above, since starting with SQL Server 2017 and Windows Server 2016, it's possible to enable the availability group feature even if the SQL Server instance does not reside on a Windows Server Failover Cluster - [see here](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/enable-and-disable-always-on-availability-groups-sql-server?view=sql-server-ver15#Prerequisites).
 
-## DAG from SQL 2016 to MIAA
-
-Currently, there is a blocking feature in setting up Distributed AGs in SQL 2016, basically, the DAG with a seed expects MIAA on Linux to have the same MDF, LDF filepath as the Windows in SQL 2016 machine `C:\` drive, which is impossible
-
-
-Let's demonstrate:
-
-```sql
-SELECT @@VERSION
-```
+---
 
 ## DAG from SQL 2022 to MIAA
+
+> TBD on access
+
+---
+
+# DAG from Azure SQL MI to MIAA
+
+> TBD on feature support
+
+---
+
+# [MIAA - Log shipping migration setup
+
+## DAG from SQL 2016 wont work
+
+There are 2 reasons why setting up DAGs from SQL 2016 to MIAA is hard - even though DAG support was introduced in SQL 2016.
+
+### 1. Windows Filepath
+Currently, there is a blocking feature in setting up Distributed AGs in SQL 2016, basically, the DAG with a seed expects MIAA on Linux to have the same MDF, LDF filepath as the Windows in SQL 2016 machine `C:\` drive, which is impossible - this limitation is documented [here](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/automatic-seeding-secondary-replicas?view=sql-server-ver15#-disk-layout) and is fixed from 2017:
+
+> In SQL Server 2016 and before, the folder where the database is created by automatic seeding **must already exist and be the same as the path on the primary replica**.
+
+> SQL Server 2017 supports availability group replicas on instances of SQL Server with different default paths.
+
+So if we were to follow the above 2019 steps in an Always-On enabled 2016 cluster - we'd see this blocking error which doesn't have any workarounds:
+```text
+2022-02-10 19:30:52.91 spid41s Error: 5133, Severity: 16, State: 1.
+2022-02-10 19:30:52.91 spid41s Directory lookup for the file "C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA\test_db1.mdf" failed with the operating system error 2(The system cannot find the file specified.).
+2022-02-10 19:30:52.92 spid41s Error: 3156, Severity: 16, State: 3.
+2022-02-10 19:30:52.92 spid41s File 'test_db1' cannot be restored to 'C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA\test_db1.mdf'. Use WITH MOVE to identify a valid location for the file.
+2022-02-10 19:30:52.98 spid41s Error: 5133, Severity: 16, State: 1.
+2022-02-10 19:30:52.98 spid41s Directory lookup for the file "C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA\test_db1_log.ldf" failed with the operating system error 2(The system cannot find the file specified.).
+2022-02-10 19:30:52.99 spid41s Error: 3156, Severity: 16, State: 3.
+2022-02-10 19:30:52.99 spid41s File 'test_db1_log' cannot be restored to 'C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA\test_db1_log.ldf'. Use WITH MOVE to identify a valid location for the file.
+```
+
+### 2. WSFC requirement
+
+> Prior to SQL Server 2017, and Windows Server 2016, the instance had to reside on a Windows Server Failover Cluster (WSFC) node to enable the Always On availability group feature - from [here](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/enable-and-disable-always-on-availability-groups-sql-server?view=sql-server-ver15#Prerequisites)
+
+So because of the fact that DAGs won't work with 2016 anyway, and the fact that it's notoriously hard to setup WSFC in Azure with Terraform, we bucket SQL 2016 with the remainder of the migration patterns for 2012 and 2014 via log-shipping.
+
+---
+
+## Log shipping from SQL 2012 to 2016 to MIAA
+
+> If we go through the log shipping setup for SQL 2012-2016 to a 2019 on a new SQL MIAA `sql-ad-no-1`, we can then setup DAGs to MIAA
+
+`#TODO Log shipping setup`
