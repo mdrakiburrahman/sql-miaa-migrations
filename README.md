@@ -14,6 +14,7 @@ We showcase the following entities in this repo:
   - [Join new Domain Controller DC2 to Root Domain](#join-new-dc2-to-root-domain)
   - [Create Child Domain maple.fg.contoso.com](#create-child-domain)
   - [Add DNS Forwarding and Delegation](#add-dns-forwarding-and-delegation)
+  - [Turn off local Windows Firewalls](#turn-off-local-firewall)
   - [Domain join SQL Servers & Client](#domain-join-remaining-machines)
   - [Create Windows Logins in SQL](#create-windows-logins-in-sql)
 - [Arc Deployment](#post-deployment)
@@ -262,6 +263,15 @@ And we see on `MAPLE-DC-1`:
 ![Conditional Forwarding to FG](_images/conditional-forwardering-1.png)
 
 ![Conditional Forwarding to FG](_images/conditional-forwardering.png)
+
+---
+### Turn off local Firewall
+
+We need to turn off Windows Firewall for later steps where `5022` is required for the AG listener. In PROD environments this can be dealt with seperately but for this use case, I found the following to work in avoiding various network related heartaches:
+
+```PowerShell
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+```
 
 ---
 
@@ -828,18 +838,25 @@ Then, we create the AG mirroring endpoint on Port `5022` and onboard the DB:
 -- Create AG mirroring endpoint with this cert as the authentication mechanism
 CREATE ENDPOINT [Hadr_endpoint]
     STATE = STARTED 
-	AS TCP (LISTENER_IP = (0.0.0.0), LISTENER_PORT = 5022)
+	AS TCP (LISTENER_IP = ALL, LISTENER_PORT = 5022)
     FOR DATA_MIRRORING (
         ROLE = ALL,
         AUTHENTICATION = CERTIFICATE server_ag_cert,
         ENCRYPTION = REQUIRED ALGORITHM AES
 	);
 
--- Create AG
+-- View database mirroring endpoints on SQL Server
+SELECT
+ name, type_desc, state_desc, role_desc,
+ connection_auth_desc, is_encryption_enabled, encryption_algorithm_desc
+FROM 
+ sys.database_mirroring_endpoints
+
+-- Create AG with static IP address - can also use DNS
 CREATE AVAILABILITY GROUP [SQL2019-AG1]
 WITH (DB_FAILOVER = ON, CLUSTER_TYPE = NONE)
 FOR 
-REPLICA ON N'MAPLE-SQL-2019' WITH (ENDPOINT_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022',
+REPLICA ON N'MAPLE-SQL-2019' WITH (ENDPOINT_URL = 'TCP://192.168.3.4:5022',
     FAILOVER_MODE = MANUAL,  
     AVAILABILITY_MODE = SYNCHRONOUS_COMMIT,   
 	PRIMARY_ROLE(ALLOW_CONNECTIONS = ALL),SECONDARY_ROLE(ALLOW_CONNECTIONS = ALL),
@@ -876,14 +893,14 @@ CREATE AVAILABILITY GROUP [DAG2019]
    AVAILABILITY GROUP ON  
       'SQL2019-AG1' WITH    
       (   
-		LISTENER_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022',    
+		LISTENER_URL = 'TCP://192.168.3.4:5022',    
         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
         FAILOVER_MODE = MANUAL,   
         SEEDING_MODE = AUTOMATIC
 	  ), 
       'sql-ad-yes-1' WITH    
       (   
-         LISTENER_URL = 'tcp://sql-ad-yes-1.fg.contoso.com:5022',   
+         LISTENER_URL = 'TCP://sql-ad-yes-1.fg.contoso.com:5022',   
          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
          FAILOVER_MODE = MANUAL,   
          SEEDING_MODE = AUTOMATIC   
@@ -895,6 +912,8 @@ We see:
 
 ![SQL DAG setup](_images/dag-2.png)
 
+Now, we create the DAG on the MIAA side.
+
 ---
 
 3. On MIAA, create the DAG:
@@ -904,14 +923,22 @@ We see:
 openssl x509 -inform der -in MAPLE-SQL-2019.cer -outform pem -out MAPLE-SQL-2019.pem
 
 # Tail logs in Controller to see DAG getting created
-kubectl logs control-g6tkq -n arc -c controller --follow
+watch kubectl logs control-sfrlt -n arc -c controller
+
+# Tail error logs in SQL MI pod to see what happens when DAG is created
+watch kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- tail /var/opt/mssql/log/errorlog
 
 # Variables
 dag_cr_name='dag2019' # CRD name
 dag_sql_name='DAG2019' # Same name as T-SQL DAG above
 local_instance='sql-ad-yes-1' # MIAA instance
-remote_instance='MAPLE-SQL-2019' # SQL 2019 instance name
-sql_ag_endpoint='TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022' # DNS resolvable endpoint for SQL 2019 AG listener
+remote_instance='SQL2019-AG1' # SQL 2019 AG name
+sql_ag_endpoint='TCP://192.168.3.4:5022' # Endpoint for SQL 2019 AG listener
+
+# Check MAPLE 2019 AG endpoint is reachable
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- curl -v telnet://192.168.3.4:5022
+# * TCP_NODELAY set
+# * Connected to MAPLE-SQL-2019.maple.fg.contoso.com (192.168.3.4) port 5022 (#0)
 
 # Create DAG on MIAA
 az sql mi-arc dag create \
@@ -925,10 +952,11 @@ az sql mi-arc dag create \
               --k8s-namespace=arc \
               --use-k8s
 
-# In the logs
-# GRANT CONNECT ON ENDPOINT::hadr_endpoint TO [DAG_MAPLE-SQL-2019_Login];
-# 2022-02-18 03:58:21.8481 | INFO  | DistributedAgStateMachine:sql-ad-yes-1::CreatingDagTransition : Done with add certificate to mirroring endpoint 
-# 2022-02-18 03:58:21.8530 | INFO  | DistributedAgStateMachine:sql-ad-yes-1::AddDistributedAgForRemote : connection : sql-ad-yes-1,sql-ad-yes-1-p-svc  query = 
+# In the Controller logs
+# GRANT CONNECT ON ENDPOINT::hadr_endpoint TO [DAG_SQL2019-AG1_Login]
+# ; 
+# 2022-02-19 01:14:24.7450 | INFO  | DistributedAgStateMachine:sql-ad-yes-1::CreatingDagTransition : Done with add certificate to mirroring endpoint 
+# 2022-02-19 01:14:24.7546 | INFO  | DistributedAgStateMachine:sql-ad-yes-1::AddDistributedAgForRemote : connection : sql-ad-yes-1,sql-ad-yes-1-p-svc  query = 
 # ALTER AVAILABILITY GROUP [DAG2019]
 #    JOIN
 #    AVAILABILITY GROUP ON 
@@ -939,15 +967,15 @@ az sql mi-arc dag create \
 #          FAILOVER_MODE = MANUAL,
 #          SEEDING_MODE = AUTOMATIC 
 #       ),
-#       'MAPLE-SQL-2019' WITH 
+#       'SQL2019-AG1' WITH 
 #       (   
-#          LISTENER_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022', 
+#          LISTENER_URL = 'TCP://192.168.3.4:5022', 
 #          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
 #          FAILOVER_MODE = MANUAL,
 #          SEEDING_MODE = AUTOMATIC
 #       );
   
-# 2022-02-18 03:58:21.9448 | INFO  | Succeeded: 
+# 2022-02-19 01:14:24.8282 | INFO  | Succeeded: 
 # ALTER AVAILABILITY GROUP [DAG2019]
 #    JOIN
 #    AVAILABILITY GROUP ON 
@@ -958,9 +986,9 @@ az sql mi-arc dag create \
 #          FAILOVER_MODE = MANUAL,
 #          SEEDING_MODE = AUTOMATIC 
 #       ),
-#       'MAPLE-SQL-2019' WITH 
+#       'SQL2019-AG1' WITH 
 #       (   
-#          LISTENER_URL = 'TCP://MAPLE-SQL-2019.maple.fg.contoso.com:5022', 
+#          LISTENER_URL = 'TCP://192.168.3.4:5022', 
 #          AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
 #          FAILOVER_MODE = MANUAL,
 #          SEEDING_MODE = AUTOMATIC
@@ -971,4 +999,68 @@ kubectl get dag -n arc
 
 # NAME      STATUS      RESULTS   AGE
 # dag2019   Succeeded             13s
+
+# Let's check if the database files are present for AdventureWorks
+# MDF
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- ls -lA /var/opt/mssql/data
+# total 152516
+# -rw-rw---- 1 1000700001 1000700001 23003136 Feb 19 01:14 AdventureWorksLT2016_Data.mdf
+# ...
+
+# LDF
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- ls -lA /var/opt/mssql/data-log
+# total 2064
+# -rw-rw---- 1 1000700001 1000700001 2097152 Feb 19 01:14 AdventureWorksLT2016_log.ldf
+```
+
+And we can get the health of the DAG on the SQL MI side via:
+
+```sql
+-- Shows sync status of distributed AG
+SELECT 
+ ag.[name] AS [DAG Name], 
+ ag.is_distributed, 
+ ar.replica_server_name AS [Underlying AG],
+ ars.role_desc AS [Role], 
+ ars.synchronization_health_desc AS [Sync Status],
+ ar.endpoint_url as [Endpoint URL],
+ ar.availability_mode_desc AS [Sync mode],
+ ar.failover_mode_desc AS [Failover mode],
+ ar.seeding_mode_desc AS [Seeding mode],
+ ar.primary_role_allow_connections_desc AS [Primary allow connections],
+ ar.secondary_role_allow_connections_desc AS [Secondary allow connections]
+FROM
+ sys.availability_groups AS ag
+ INNER JOIN sys.availability_replicas AS ar
+ ON ag.group_id = ar.group_id
+ INNER JOIN sys.dm_hadr_availability_replica_states AS ars
+ ON ar.replica_id = ars.replica_id
+WHERE
+ ag.is_distributed = 1
+```
+
+And this is the finished state:
+![SQL DAG setup](_images/dag-3.png)
+
+To clean up the DAG on SQL 2019:
+```sql
+-- Run on SQL 2019
+-- DAG
+DROP AVAILABILITY GROUP [DAG2019]
+DROP CERTIFICATE [miaa_certificate]
+DROP USER [miaa_user]
+DROP LOGIN [miaa_login]
+
+-- AG
+DROP AVAILABILITY GROUP [SQL2019-AG1]
+DROP ENDPOINT [Hadr_endpoint]
+DROP CERTIFICATE [server_ag_cert]
+```
+To clean up the DAG on SQL MIAA:
+
+```bash
+az sql mi-arc dag delete \
+            --name=dag2019 \
+            --k8s-namespace=arc \
+            --use-k8s
 ```
