@@ -1094,7 +1094,7 @@ az sql mi-arc dag delete \
 
 ## DAG from SQL 2016 wont work
 
-There are 2 reasons why setting up DAGs from SQL 2016 to MIAA is hard - even though DAG support was introduced in SQL 2016.
+There are 2 reasons why setting up DAGs from SQL 2016 to MIAA is hard - even though DAG support was [introduced in SQL 2016](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/distributed-availability-groups?view=sql-server-ver15).
 
 ### 1. Windows Filepath
 Currently, there is a blocking feature in setting up Distributed AGs in SQL 2016, basically, the DAG with a seed expects MIAA on Linux to have the same MDF, LDF filepath as the Windows in SQL 2016 machine `C:\` drive, which is impossible - this limitation is documented [here](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/automatic-seeding-secondary-replicas?view=sql-server-ver15#-disk-layout) and is fixed from 2017:
