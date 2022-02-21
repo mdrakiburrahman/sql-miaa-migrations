@@ -1228,10 +1228,10 @@ So because of the fact that DAGs won't work with 2016 anyway, and the fact that 
 
 It seems Distributed AGs do not work on MIAA January release as of yet due to database backward compatibility between SQL 2022 CTP 1.3 and MIAA at the time of writing:
 
-| Engine | `SELECT @@VERSION` | Database Version |
-| --- | --- | --- |
-| SQL 2022 CTP 1.3 | Microsoft SQL Server 2022 (CTP1.3) - 16.0.300.4 (X64)   Feb  9 2022 10:50:31   Copyright (C) 2021 Microsoft Corporation  Enterprise Edition (64-bit) on Windows Server 2022 Datacenter 10.0 <X64> (Build 20348: ) (Hypervisor)   | `947` <- higher |
-| MIAA January 2022 | Microsoft Azure SQL Managed Instance - Azure Arc - 15.0.2255.118 (X64)   Jan 25 2022 18:51:31   Copyright (C) 2019 Microsoft Corporation  General Purpose (64-bit) on Linux (Ubuntu 20.04.3 LTS) <X64> | `936` |
+| Engine | `SELECT @@VERSION` |
+| --- | --- |
+| SQL 2022 CTP 1.3 | Microsoft SQL Server 2022 (CTP1.3) - 16.0.300.4 (X64)   Feb  9 2022 10:50:31   Copyright (C) 2021 Microsoft Corporation  Enterprise Edition (64-bit) on Windows Server 2022 Datacenter 10.0 <X64> (Build 20348: ) (Hypervisor)   |
+| MIAA January 2022 | Microsoft Azure SQL Managed Instance - Azure Arc - 15.0.2255.118 (X64)   Jan 25 2022 18:51:31   Copyright (C) 2019 Microsoft Corporation  General Purpose (64-bit) on Linux (Ubuntu 20.04.3 LTS) <X64> | 
 
 ![SQL 2022 VS MIAA engine](_images/dag-6.png)
 
@@ -1700,3 +1700,5 @@ GO
 
 > The question is - how to onboard this Database to DAG now?
 > `TBD`
+
+> Retry above with `RECOVERY` and see if Log Replication works.
