@@ -1,23 +1,30 @@
 # SQL Server to Arc SQL MI - Migration environment
 
+> `#TODO logo diagram`
+
 A terraform-built demo environment for migrating various SQL Servers to Arc SQL MI.
 
+**Architecture**
+
 > `#TODO DIAGRAM | Domain, DNS`
+
+**Validated Scenarios**
+
+> `#TODO Validated scenarios`
 
 ## Table of Contents <!-- omit in toc -->
 - [Infrastructure Deployment](#infrastructure-deployment)
   - [Dev Container](#dev-container)
   - [Terraform apply](#terraform-apply)
-- [Post Deployment Steps](#post-deployment)
+- [Post Deployment Steps](#post-deployment-windows-vms)
   - [Create Root Domain fg.contoso.com](#create-root-domain-with-dc1)
   - [Join new Domain Controller DC2 to Root Domain](#join-new-dc2-to-root-domain)
   - [Create Child Domain maple.fg.contoso.com](#create-child-domain)
   - [Add DNS Forwarding and Delegation](#add-dns-forwarding-and-delegation)
   - [Turn off local Windows Firewalls](#turn-off-local-firewall)
   - [Domain join SQL Servers & Client](#domain-join-remaining-machines)
+  - [Install SQL 2022 on FG-SQL-2022-vm](#install-sql-2022)
   - [Create Windows Logins in SQL](#create-windows-logins-in-sql)
-- [Arc Deployment](#post-deployment)
-- [Data Migration Setup](#migration-setup)
 - [Arc SQL MI Setup with AD](#arc-sql-mi-setup)
   - [Data Controller deployment](#data-controller-deployment)
   - [Active Directory pre-reqs](#active-directory-pre-reqs)
@@ -25,9 +32,10 @@ A terraform-built demo environment for migrating various SQL Servers to Arc SQL 
   - [SQL MI Deployment](#sql-mi-deployment)
   - [Create Windows Logins](#create-windows-logins)
   - [Kerberos workaround for MAPLE](#kerberos-workaround-for-maple)
-- [MIAA - DAG migration setup](#miaa-dag-migration-setup)
+- [MIAA - DAG migration setup](#miaa-migration-setup)
   - [DAG from SQL 2019](#dag-from-SQL-2019-to-MIAA)
   - [DAG from SQL 2017](#dag-from-SQL-2017-to-MIAA)
+  - [DAG from SQL 2016](#dag-from-SQL-2016-to-MIAA)
   - [DAG from SQL 2022](#dag-from-SQL-2022-to-MIAA)
   - [DAG from Azure SQL MI](#dag-from-Azure-SQL-MI-to-MIAA)
 - [MIAA - Log shipping migration setup](#miaa-log-shipping-migration-setup)
@@ -74,9 +82,11 @@ And we see:
 
 ![Resources Deployed](_images/terraform-resources.png)
 
-## Post Deployment
+> Note that `FG-SQL-2022-vm` is not an Azure Marketplace SQL image, it's a Windows Server 2022 machine where we will install SQL 2022 CTP.
 
-The following steps weren't automated via Terraform because of return on invetment (and because automating stuff inside Windows is hard) - so we perform them manually:
+## Post Deployment Windows VMs
+
+The following steps weren't automated via Terraform because of return on invetment (and because automating stuff inside Windows is tedious via PowerShell DSC etc.) - so we run these scripts manually:
 
 ---
 
@@ -87,7 +97,7 @@ We run the following on: `FG-DC-1` to create `fg.contoso.com`
 ```powershell
 # Configure the Domain Controller
 $domainName = 'fg.contoso.com'
-$domainAdminPassword = "P@s5w0rd123!!"
+$domainAdminPassword = "acntorPRESTO!"
 $secureDomainAdminPassword = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
 
 Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
@@ -119,7 +129,7 @@ We run the following on: `FG-DC-2` to join `fg.contoso.com`:
 ```powershell
 # Join to Domain
 $user = "FG\boor"
-$domainAdminPassword = "P@s5w0rd123!!"
+$domainAdminPassword = "acntorPRESTO!"
 $domainName = 'fg.contoso.com'
 $pass = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
 $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, $pass
@@ -188,7 +198,7 @@ Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -Verbose
 
 # Set Creds
 $user = "boor@fg.contoso.com" # Different format than before since machine isn't domain joined
-$domainAdminPassword = "P@s5w0rd123!!"
+$domainAdminPassword = "acntorPRESTO!"
 $domainName = 'fg.contoso.com'
 $pass = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
 $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, $pass
@@ -278,6 +288,14 @@ We need to turn off Windows Firewall for later steps where `5022` is required fo
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
 ```
 
+We do this on all of our SQL machines:
+* `FG-SQL-2012-sql-vm`
+* `FG-SQL-2014-sql-vm`
+* `FG-SQL-2016-sql-vm`
+* `FG-SQL-2022-vm`
+* `MAPLE-SQL-2017-sql-vm`
+* `MAPLE-SQL-2019-sql-vm`
+
 ---
 
 ### Domain Join remaining machines
@@ -287,11 +305,12 @@ On each of the following `FG` machines, run the following PowerShell script as l
 * `FG-SQL-2012-sql-vm`
 * `FG-SQL-2014-sql-vm`
 * `FG-SQL-2016-sql-vm`
+* `FG-SQL-2022-vm`
 
 ``` Powershell
 # Join to FG Domain
 $user = "FG\boor"
-$domainAdminPassword = "P@s5w0rd123!!"
+$domainAdminPassword = "acntorPRESTO!"
 $domainName = 'fg.contoso.com'
 $pass = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
 $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, $pass
@@ -302,12 +321,14 @@ We see:
 
 ![FG Machines](_images/fg-pc.png)
 
-And for `MAPLE-SQL-2019-sql-vm`:
+And similarly for the `MAPLE` machines:
+* `MAPLE-SQL-2017-sql-vm`
+* `MAPLE-SQL-2019-sql-vm`
 
 ``` Powershell
 # Join to MAPLE Domain
 $user = "MAPLE\boor"
-$domainAdminPassword = "P@s5w0rd123!!"
+$domainAdminPassword = "acntorPRESTO!"
 $domainName = 'maple.fg.contoso.com'
 $pass = $domainAdminPassword | ConvertTo-SecureString -AsPlainText -Force
 $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, $pass
@@ -318,9 +339,26 @@ add-computer –domainname $domainName -Credential $Credential -restart –force
 
 ---
 
+### Install SQL 2022
+
+We install SQL Server 2022 [CTP - Community Technology Preview](https://searchsqlserver.techtarget.com/definition/Community-Technology-Preview-CTP) on our VM. This installation had to be done manually via `setup.exe` as we don't have an Azure VM ISO with the necessary automation available at the time of writing (February 2022).
+
+Once the installation is done, we see:
+![SQL 2022 installation](_images/sql-2022.png)
+
+And validate our SQL engine version:
+
+![SQL 2022 version](_images/sql-2022-version.png)
+
+```text
+Microsoft SQL Server 2022 (CTP1.3) - 16.0.300.4 (X64)   Feb  9 2022 10:50:31   Copyright (C) 2021 Microsoft Corporation  Enterprise Edition (64-bit) on Windows Server 2022 Datacenter 10.0 <X64> (Build 20348: ) (Hypervisor) 
+```
+
+---
+
 ### Create Windows logins in SQL
 
-Now, we must RDP in as the **local** user `boor` and not the domain user (`FG\boor` or `MAPLE\boor`) - so that we can sign into our 4 SQL Servers and create Windows AD logins.
+Now, we must RDP in as the **local** user `boor` and not the domain user (`FG\boor` or `MAPLE\boor`) - so that we can sign into our **6** SQL Servers and create Windows AD logins.
 
 > This is because the SQL Marketplace images created local user logins by default.
 
@@ -336,6 +374,8 @@ Perform on:
 * `FG-SQL-2012-sql-vm`
 * `FG-SQL-2014-sql-vm`
 * `FG-SQL-2016-sql-vm`
+* `FG-SQL-2022-vm`
+* `MAPLE-SQL-2017-sql-vm`
 * `MAPLE-SQL-2019-sql-vm`
 
 ``` SQL
@@ -378,7 +418,7 @@ cd kubernetes
 export adminUsername='admin'
 export resourceGroup=$TF_VAR_resource_group_name
 export AZDATA_USERNAME='admin'
-export AZDATA_PASSWORD='P@s5w0rd123!!'
+export AZDATA_PASSWORD='acntorPRESTO!'
 export arcDcName='arc-dc'
 export azureLocation='eastus'
 export clusterName='aks-cni'
@@ -734,8 +774,14 @@ wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventur
 # FG-SQL-2016
 wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2016.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2016.bak"
 
+# MAPLE-SQL-2017
+wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2017.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2017.bak"
+
 # MAPLE-SQL-2019
 wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2019.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2019.bak"
+
+# FG-SQL-2022-vm
+wget "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksLT2019.bak" -outfile "C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2019.bak"
 ```
 
 **Restore**
@@ -768,6 +814,15 @@ MOVE 'AdventureWorksLT2012_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL1
 FILE = 1,  NOUNLOAD,  STATS = 5
 GO
 
+-- MAPLE-SQL-2017
+USE [master]
+RESTORE DATABASE [AdventureWorks2017] 
+FROM  DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2017.bak' 
+WITH MOVE 'AdventureWorksLT2012_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2017_Data.mdf',
+MOVE 'AdventureWorksLT2012_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2017_log.ldf',
+FILE = 1,  NOUNLOAD,  STATS = 5
+GO
+
 -- MAPLE-SQL-2019
 USE [master]
 RESTORE DATABASE [AdventureWorks2019] 
@@ -777,11 +832,22 @@ MOVE 'AdventureWorksLT2012_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL1
 FILE = 1,  NOUNLOAD,  STATS = 5
 GO
 
+-- FG-SQL-2022-vm
+USE [master]
+RESTORE DATABASE [AdventureWorks2022] 
+FROM  DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\Backup\AdventureWorksLT2019.bak' 
+WITH MOVE 'AdventureWorksLT2012_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2022_Data.mdf',
+MOVE 'AdventureWorksLT2012_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2022_log.ldf',
+FILE = 1,  NOUNLOAD,  STATS = 5
+GO
+
 ```
 
 We see:
 
 ![SQL Backups restored](_images/sql-baks.png)
+
+---
 
 ## DAG from SQL 2019 to MIAA
 
@@ -813,7 +879,12 @@ We also note the mirroring endpoint for MIAA is `sql-ad-yes-1.fg.contoso.com:502
 
 ---
 
-2. On `MAPLE-SQL-2019`, first we enable AlwaysOn AGs:
+2. On the following SQL instances, first we enable AlwaysOn AGs:
+* `MAPLE-SQL-2017`
+* `MAPLE-SQL-2019`
+* `FG-SQL-2022-vm` <- the `vm` part is necessary since it's in our SQL Instance name from the manual install
+
+> Prior to SQL Server 2017, e.g. SQL Server 2016 SP3 and earlier, the instance had to reside on a Windows Server Failover Cluster (WSFC) node to enable the Always On availability group feature - from [here](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/enable-and-disable-always-on-availability-groups-sql-server?view=sql-server-ver15#Prerequisites). We don't have this setup as it's fairly tedious to automate.
 
 ```PowerShell
 Enable-SqlAlwaysOn -ServerInstance "MAPLE-SQL-2019" -Force
@@ -831,7 +902,7 @@ CREATE CERTIFICATE server_ag_cert WITH SUBJECT = 'Local AG Certificate';
 BACKUP CERTIFICATE server_ag_cert to file = N'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\MAPLE-SQL-2019.cer';
 
 ```
-> Copy the file into this container using some creative method
+> Copy the file into this VS Code devcontainer using some creative method
 
 We see:
 
@@ -999,6 +1070,14 @@ az sql mi-arc dag create \
 #          SEEDING_MODE = AUTOMATIC
 #       );
 
+# And in MIAA /var/opt/mssql/log/errorlog we see these informational messages:
+
+# 2022-02-21 01:09:53.48 spid62s     Version of database AdventureWorks2019 at startup is 869.t
+# 2022-02-21 01:09:53.60 spid62s     Parallel redo is started for database 'AdventureWorks2019' with worker pool size [2].C
+# 2022-02-21 01:09:53.71 spid62s     [HadrRecoveryCallbacks] Recovery should not complete on downlevel database AdventureWorks2019 because downlevel version (869) is not allowed.
+# 2022-02-21 01:09:53.74 spid61s     Always On Availability Groups connection with primary database established for secondary database 'AdventureWorks2019' on the availability replica 'SQL2019-AG1' with Replica ID: {c42a9c69-7527-ac60-52ff-01b8eb4ab7cc}. This is an informational message only. No user action is required.
+# 2022-02-21 01:09:53.75 spid61s     The recovery LSN (49:272:1) was identified for the database with ID 6. This is an informational message only. No user action is required.
+
 # And we see
 kubectl get dag -n arc
 
@@ -1045,7 +1124,7 @@ WHERE
 ```
 
 And this is the finished state:
-![SQL DAG setup](_images/dag-3.png)
+![SQL 2019 DAG setup](_images/dag-3.png)
 
 To clean up the DAG on SQL 2019:
 ```sql
@@ -1074,25 +1153,48 @@ az sql mi-arc dag delete \
 
 ## DAG from SQL 2017 to MIAA
 
-> The steps for a SQL 2017 are identical to 2019 above, since starting with SQL Server 2017 and Windows Server 2016, it's possible to enable the availability group feature even if the SQL Server instance does not reside on a Windows Server Failover Cluster - [see here](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/enable-and-disable-always-on-availability-groups-sql-server?view=sql-server-ver15#Prerequisites).
+> The steps for a SQL 2017 are identical to 2019 above
+
+We setup a DAG to a new SQL MIAA, `sql-ad-no-1` (this MIAA we don't bother with Active Directory setup since we showcased this with `sql-ad-yes-1` earlier).
+
+**Validation**
+
+```PowerShell
+# And we see
+kubectl get dag -n arc
+
+# NAME      STATUS      RESULTS   AGE
+# dag2017   Succeeded             5m39s
+# dag2019   Succeeded             2d
+
+# /var/opt/mssql/log/errorlog:
+
+# 2022-02-21 01:09:53.48 spid62s     Version of database AdventureWorks2017 at startup is 869.t
+# 2022-02-21 01:09:53.60 spid62s     Parallel redo is started for database 'AdventureWorks2017' with worker pool size [2].C
+# 2022-02-21 01:09:53.71 spid62s     [HadrRecoveryCallbacks] Recovery should not complete on downlevel database AdventureWorks2017 because downlevel version (869) is not allowed.
+# 2022-02-21 01:09:53.74 spid61s     Always On Availability Groups connection with primary database established for secondary database 'AdventureWorks2017' on the availability replica 'SQL2017-AG1' with Replica ID: {c42a9c69-7527-ac60-52ff-01b8eb4ab7cc}. This is an informational message only. No user action is required.
+# 2022-02-21 01:09:53.75 spid61s     The recovery LSN (49:272:1) was identified for the database with ID 6. This is an informational message only. No user action is required.
+
+
+# Let's check if the database files are present for AdventureWorks
+# MDF
+kubectl exec sql-ad-no-1-0 -n arc -c arc-sqlmi -- ls -lA /var/opt/mssql/data
+# -rw-rw---- 1 1000700001 1000700001 23003136 Feb 21 01:09 AdventureWorksLT2017_Data.mdf
+# ...
+
+# LDF
+kubectl exec sql-ad-no-1-0 -n arc -c arc-sqlmi -- ls -lA /var/opt/mssql/data-log
+# -rw-rw---- 1 1000700001 1000700001 2097152 Feb 21 01:09 AdventureWorksLT2017_log.ldf
+```
+
+DAGs are healthy:
+![SQL 2017 DAG setup](_images/dag-4.png)
 
 ---
 
-## DAG from SQL 2022 to MIAA
+## DAG from SQL 2016 to MIAA
 
-> TBD on access
-
----
-
-## DAG from Azure SQL MI to MIAA
-
-> TBD on feature support
-
----
-
-# MIAA Log shipping migration setup
-
-## DAG from SQL 2016 wont work
+> In this demonstration, we will not be able to setup DAGs from SQL 2016 for 2 reasons, **1** is blocking until a feature support is rolled back from 2017 as a patch.
 
 There are 2 reasons why setting up DAGs from SQL 2016 to MIAA is hard - even though DAG support was [introduced in SQL 2016](https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/distributed-availability-groups?view=sql-server-ver15).
 
@@ -1123,8 +1225,117 @@ So because of the fact that DAGs won't work with 2016 anyway, and the fact that 
 
 ---
 
+## DAG from SQL 2022 to MIAA
+
+It seems Distributed AGs do not work on MIAA January release as of yet due to database backward compatibility between SQL 2022 CTP 1.3 and MIAA at the time of writing:
+
+| Engine | `SELECT @@VERSION` | Database Version |
+| --- | --- | --- |
+| SQL 2022 CTP 1.3 | Microsoft SQL Server 2022 (CTP1.3) - 16.0.300.4 (X64)   Feb  9 2022 10:50:31   Copyright (C) 2021 Microsoft Corporation  Enterprise Edition (64-bit) on Windows Server 2022 Datacenter 10.0 <X64> (Build 20348: ) (Hypervisor)   | `947` <- higher |
+| MIAA January 2022 | Microsoft Azure SQL Managed Instance - Azure Arc - 15.0.2255.118 (X64)   Jan 25 2022 18:51:31   Copyright (C) 2019 Microsoft Corporation  General Purpose (64-bit) on Linux (Ubuntu 20.04.3 LTS) <X64> | `936` |
+
+![SQL 2022 VS MIAA engine](_images/dag-6.png)
+
+> The steps follwed for SQL 2022 are identical to 2019 [above](#dag-from-SQL-2019-to-MIAA).
+
+We had setup a DAG to a new SQL MIAA, `sql-ad-no-2`.
+
+**Observation after DAG setup**
+
+```PowerShell
+# Once we submit the DAG to the CRD, the Controller performs the following TSQL:
+
+# In the Controller logs
+CONNECT ON ENDPOINT::hadr_endpoint TO [DAG_SQL2022-AG1_Login];
+2022-02-21 01:50:12.1709 | INFO  | DistributedAgStateMachine:sql-ad-no-2::CreatingDagTransition : Done with add certificate to mirroring endpoint 
+2022-02-21 01:50:12.1772 | INFO  | DistributedAgStateMachine:sql-ad-no-2::AddDistributedAgForRemote : connection : sql-ad-no-2,sql-ad-no-2-p-svc  query = 
+ALTER AVAILABILITY GROUP [DAG2022]
+   JOIN
+   AVAILABILITY GROUP ON 
+      'sql-ad-no-2' WITH 
+      (
+         LISTENER_URL = 'tcp://localhost:5022',
+         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,
+         FAILOVER_MODE = MANUAL,
+         SEEDING_MODE = AUTOMATIC 
+      ),
+      'SQL2022-AG1' WITH 
+      (   
+         LISTENER_URL = 'TCP://192.168.2.30:5022', 
+         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
+         FAILOVER_MODE = MANUAL,
+         SEEDING_MODE = AUTOMATIC
+      );
+  
+2022-02-21 01:50:12.2890 | INFO  | Succeeded: 
+ALTER AVAILABILITY GROUP [DAG2022]
+   JOIN
+   AVAILABILITY GROUP ON 
+      'sql-ad-no-2' WITH 
+      (
+         LISTENER_URL = 'tcp://localhost:5022',
+         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,
+         FAILOVER_MODE = MANUAL,
+         SEEDING_MODE = AUTOMATIC 
+      ),
+      'SQL2022-AG1' WITH 
+      (   
+         LISTENER_URL = 'TCP://192.168.2.30:5022', 
+         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
+         FAILOVER_MODE = MANUAL,
+         SEEDING_MODE = AUTOMATIC
+      );
+
+# And although we see the DAG provisioniing TSQL "suceeded" by the Controller:
+kubectl get dag -n arc
+
+# NAME      STATUS      RESULTS   AGE
+NAME      STATUS      RESULTS   AGE
+dag2017   Succeeded             42m
+dag2019   Succeeded             2d
+dag2022   Succeeded <-          118s
+
+# In the MIAA /var/opt/mssql/log/errorlog - we see the errors when the Database begins to seed from 2022 -> MIAA:
+
+2022-02-21 01:50:14.45 spid90s     The database was backed up on a server running database version 947. That version is incompatible with this server, which supports version 936. Either restore the database on a server that supports the backup, or use a backup that is compatible with this server.u
+2022-02-21 01:50:14.45 spid90s     Error: 3013, Severity: 16, State: 1.f
+2022-02-21 01:50:14.45 spid90s     RESTORE DATABASE is terminating abnormally.a
+2022-02-21 01:50:14.45 spid90s     Automatic seeding of availability database 'AdventureWorks2022' in availability group 'DAG2022' failed with a transient error. The operation will be retried.g
+2022-02-21 01:50:14.45 spid90s     Always On: DebugTraceVarArgs AR 'Seeding is cancelled for [$]. Reason = 215 [Seeding]'
+2022-02-21 01:50:14.45 spid90s     Always On: DebugTraceVarArgs AR '[HADR] [Secondary] operation on replicas [A94F9BA7-911E-9971-44D2-2078B49468D2]->[5C3A49E6-9E5A-C69A-3C34-C9C7CF688382], database [AdventureWorks2022], remote endpoint [TCP://192.168.2.30:5022], source operation [765CBC06-DBC3-4791-AF56-9A816BD06E74]: Transitioning from [SEEDING] to [FAILED].'y
+2022-02-21 01:50:14.45 spid90s     Error: 208, Severity: 16, State: 1.1
+2022-02-21 01:50:14.45 spid90s     Invalid object name 'sys.dm_hadr_automatic_seeding'.
+2022-02-21 01:50:14.45 spid90s     Always On: DebugTraceVarArgs AR '[HADR] [Secondary] operation on replicas [A94F9BA7-911E-9971-44D2-2078B49468D2]->[5C3A49E6-9E5A-C69A-3C34-C9C7CF688382], database [AdventureWorks2022], remote endpoint [TCP://192.168.2.30:5022], source operation [765CBC06-DBC3-4791-AF56-9A816BD06E74]: Failed to log 'FAILED' seeding'
+2022-02-21 01:50:14.52 spid90s     Always On: DebugTraceVarArgs AR '[HADR] [Secondary] operation on replicas [A94F9BA7-911E-9971-44D2-2078B49468D2]->[5C3A49E6-9E5A-C69A-3C34-C9C7CF688382], database [AdventureWorks2022], remote endpoint [TCP://192.168.2.30:5022], source operation [765CBC06-DBC3-4791-AF56-9A816BD06E74]: Seeding encountered a failure, state '215''
+
+# And as the errors above indicate, the seeding fails, and the database files are not seeded for AdventureWorks to MIAA:
+# MDF
+kubectl exec sql-ad-no-1-0 -n arc -c arc-sqlmi -- ls -lA /var/opt/mssql/data
+# -rw-rw---- 1 1000700001 1000700001 23003136 Feb 21 01:09 AdventureWorksLT2017_Data.mdf
+# ...
+
+# LDF
+kubectl exec sql-ad-no-1-0 -n arc -c arc-sqlmi -- ls -lA /var/opt/mssql/data-log
+# -rw-rw---- 1 1000700001 1000700001 2097152 Feb 21 01:09 AdventureWorksLT2017_log.ldf
+```
+
+DAGs are unhealthy as expected - since the Database didn't seed:
+![SQL 2022 DAG setup](_images/dag-5.png)
+
+This will most likely be fixed as SQL 2022 is close to GA.
+
+---
+
+## DAG from Azure SQL MI to MIAA
+
+> TBD on feature support
+
+---
+
+# MIAA Log shipping migration setup
+
 ## Log shipping from SQL 2012 to 2016 to MIAA
 
-> If we go through the log shipping setup for SQL 2012-2016 to a 2019 on a new SQL MIAA `sql-ad-no-1`, we can then setup DAGs to MIAA
+> If we go through the log shipping setup for SQL 2012-2016 to a 2019 on a new SQL MIAA `sql-ad-no-1`, we can then setup DAGs to MIAA from the SQL 2019 VM
 
 `#TODO Log shipping setup`

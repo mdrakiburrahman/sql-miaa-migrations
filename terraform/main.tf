@@ -150,6 +150,22 @@ module "sql_2016" {
 
   tags = var.tags
 }
+# 2017
+module "sql_2017" {
+  depends_on = [module.vnet]
+
+  source                  = "./modules/sql-module"
+  prefix                  = "MAPLE-SQL-2017"
+  resource_group_location = var.resource_group_location
+  resource_group_name     = var.resource_group_name
+  subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "MAPLE-SQL")
+  user_password           = var.VM_USER_PASSWORD
+  vm_image_publisher      = "MicrosoftSQLServer"
+  vm_image_offer          = "sql2017-ws2019"
+  vm_image_sku            = "enterprise"
+
+  tags = var.tags
+}
 # 2019
 module "sql_2019" {
   depends_on = [module.vnet]
@@ -163,6 +179,23 @@ module "sql_2019" {
   vm_image_publisher      = "MicrosoftSQLServer"
   vm_image_offer          = "sql2019-ws2019"
   vm_image_sku            = "enterprise"
+
+  tags = var.tags
+}
+# 2022
+module "sql_2022" {
+  depends_on = [module.vnet]
+
+  source                  = "./modules/vm-module"
+  prefix                  = "FG-SQL-2022"
+  resource_group_location = var.resource_group_location
+  resource_group_name     = var.resource_group_name
+  subnet_id               = lookup(module.vnet.vnet_subnets_name_id, "FG-SQL")
+  private_ip              = "192.168.2.30" // We pick a private IP address that is not in use
+  user_password           = var.VM_USER_PASSWORD
+  vm_image_publisher      = "MicrosoftWindowsServer"
+  vm_image_offer          = "WindowsServer"
+  vm_image_sku            = "2022-datacenter" // We will install the SQL 2022 CTP binary by hand as it is not available as an Azure Marketplace image at time of writing
 
   tags = var.tags
 }

@@ -4,14 +4,14 @@ data:
   username: Ym9vcg==
 kind: Secret
 metadata:
-  name: sql-ad-yes-1-login-secret
+  name: sql-ad-no-2-login-secret
   namespace: arc
 type: Opaque
 ---
 apiVersion: sql.arcdata.microsoft.com/v2
 kind: SqlManagedInstance
 metadata:
-  name: sql-ad-yes-1
+  name: sql-ad-no-2
   namespace: arc
 spec:
   backup:
@@ -31,17 +31,10 @@ spec:
           cpu: "1"
           memory: 2Gi
   security:
-    adminLoginSecret: sql-ad-yes-1-login-secret
-    activeDirectory:
-      connector:
-        name: adarc
-        namespace: arc
-      accountName: sql-ad-yes-1-account
-      keytabSecret: sql-ad-yes-1-keytab-secret
+    adminLoginSecret: sql-ad-no-2-login-secret
   services:
     primary:
       type: LoadBalancer
-      dnsName: sql-ad-yes-1.fg.contoso.com
       port: 31433
   storage:
     backups:

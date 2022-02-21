@@ -25,11 +25,11 @@ spec:
     default:
       resources:
         limits:
-          cpu: "2"
-          memory: 4Gi
+          cpu: "1"
+          memory: 2Gi
         requests:
-          cpu: "2"
-          memory: 4Gi
+          cpu: "1"
+          memory: 2Gi
   security:
     adminLoginSecret: sql-ad-no-1-login-secret
   services:
