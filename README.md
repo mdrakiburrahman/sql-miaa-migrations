@@ -1305,7 +1305,6 @@ dag2022   Succeeded <-          118s
 2022-02-21 01:50:14.45 spid90s     Error: 208, Severity: 16, State: 1.1
 2022-02-21 01:50:14.45 spid90s     Invalid object name 'sys.dm_hadr_automatic_seeding'.
 2022-02-21 01:50:14.45 spid90s     Always On: DebugTraceVarArgs AR '[HADR] [Secondary] operation on replicas [A94F9BA7-911E-9971-44D2-2078B49468D2]->[5C3A49E6-9E5A-C69A-3C34-C9C7CF688382], database [AdventureWorks2022], remote endpoint [TCP://192.168.2.30:5022], source operation [765CBC06-DBC3-4791-AF56-9A816BD06E74]: Failed to log 'FAILED' seeding'
-2022-02-21 01:50:14.52 spid90s     Always On: DebugTraceVarArgs AR '[HADR] [Secondary] operation on replicas [A94F9BA7-911E-9971-44D2-2078B49468D2]->[5C3A49E6-9E5A-C69A-3C34-C9C7CF688382], database [AdventureWorks2022], remote endpoint [TCP://192.168.2.30:5022], source operation [765CBC06-DBC3-4791-AF56-9A816BD06E74]: Seeding encountered a failure, state '215''
 
 # And as the errors above indicate, the seeding fails, and the database files are not seeded for AdventureWorks to MIAA:
 # MDF
