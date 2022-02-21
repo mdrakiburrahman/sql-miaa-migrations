@@ -39,7 +39,6 @@ A terraform-built demo environment for migrating various SQL Servers to Arc SQL 
   - [DAG from SQL 2022](#dag-from-SQL-2022-to-MIAA)
   - [DAG from Azure SQL MI](#dag-from-Azure-SQL-MI-to-MIAA)
 - [MIAA - Log shipping migration setup](#miaa-log-shipping-migration-setup)
-  - [Why DAG on SQL 2016 won't work](#dag-from-SQL-2016-wont-work)
   - [Log shipping from SQL 2012-2016 to 2019, DAG over](#log-shipping-from-SQL-2012-to-2016-to-MIAA)
 
 ## Infrastructure Deployment
