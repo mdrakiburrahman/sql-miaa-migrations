@@ -1334,6 +1334,369 @@ This will most likely be fixed as SQL 2022 is close to GA.
 
 ## Log shipping from SQL 2012 to 2016 to MIAA
 
-> If we go through the log shipping setup for SQL 2012-2016 to a 2019 on a new SQL MIAA `sql-ad-no-1`, we can then setup DAGs to MIAA from the SQL 2019 VM
+> **Plan**: 2012 → 2017 → onboard to AG → get auto-seeded to MIAA
 
-`#TODO Log shipping setup`
+**Create a Share available to both `FG-SQL-2012` and `MAPLE-SQL-2017`**
+
+We do this on `MAPLE-DC-1`'s local `C:\` drive but this could be anywhere that's network reachable.
+
+> We will use `MAPLE-DC-1` as the mediary server for all Log Shipping.
+
+```PowerShell
+# New SMB share location - create on MAPLE-DC-1
+New-Item "C:\LogShippingShare" –type directory
+# Create SMB share
+New-SMBShare –Name "LogShippingShare" `
+             –Path "C:\LogShippingShare" `
+             –FullAccess Users
+
+# In Production we'd set this to the Service account of the SQL Processes only
+Grant-SmbShareAccess -Name "LogShippingShare" -AccountName "Everyone" -AccessRight Full -Confirm -Force
+```
+
+We see:
+
+![SMB Share setup](_images/log-ship-1.png)
+
+And we can access it fine from `FG-SQL-2012` at:
+
+```text
+\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare
+```
+
+![SMB Share setup](_images/log-ship-2.png)
+
+---
+
+**Create Full backup on `2012` and restore on `2017`**
+
+```SQL
+-- ============
+-- FG-SQL-2012
+-- ============
+-- Change Database to Full Recovery mode
+ALTER DATABASE AdventureWorks2012 SET RECOVERY FULL
+GO
+
+-- Verify
+SELECT name, compatibility_level, recovery_model, recovery_model_desc, state_desc
+FROM sys.databases
+WHERE name = 'AdventureWorks2012'
+
+-- name						compatibility_level	recovery_model	recovery_model_desc		state_desc
+-- AdventureWorks2012		100					1				FULL					ONLINE
+
+-- Make a directory under the share named Full
+
+-- Backup to share
+BACKUP DATABASE AdventureWorks2012 TO DISK = '\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\Full\AdventureWorks2012.bak'
+
+-- ===============
+-- MAPLE-SQL-2017
+-- ===============
+-- Restore full backup with No Recovery
+USE [master]
+RESTORE DATABASE [AdventureWorks2012] FROM  DISK = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\Full\AdventureWorks2012.bak' WITH  FILE = 1,  MOVE N'AdventureWorksLT2008_Data' TO N'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2012_Data.mdf',  MOVE N'AdventureWorksLT2008_Log' TO N'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\DATA\AdventureWorksLT2012_log.ldf',  NORECOVERY,  NOUNLOAD,  STATS = 5
+
+GO
+
+```
+
+We see:
+
+![Backup restore completed](_images/log-ship-4.png)
+
+---
+
+**Run script on Primary: `FG-SQL-2012`**
+
+```SQL
+-- Execute the following statements at the Primary to configure Log Shipping 
+-- for the database [FG-SQL-2012].[AdventureWorks2012],
+-- The script needs to be run at the Primary in the context of the [msdb] database.  
+------------------------------------------------------------------------------------- 
+-- Adding the Log Shipping configuration 
+
+-- ****** Begin: Script to be run at Primary: [FG-SQL-2012] ******
+
+
+DECLARE @LS_BackupJobId	AS uniqueidentifier 
+DECLARE @LS_PrimaryId	AS uniqueidentifier 
+DECLARE @SP_Add_RetCode	As int 
+
+
+EXEC @SP_Add_RetCode = master.dbo.sp_add_log_shipping_primary_database 
+		@database = N'AdventureWorks2012' 
+		,@backup_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+		,@backup_share = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+		,@backup_job_name = N'LSBackup_AdventureWorks2012' 
+		,@backup_retention_period = 4320
+		,@backup_compression = 2
+		,@backup_threshold = 60 
+		,@threshold_alert_enabled = 1
+		,@history_retention_period = 5760 
+		,@backup_job_id = @LS_BackupJobId OUTPUT 
+		,@primary_id = @LS_PrimaryId OUTPUT 
+		,@overwrite = 1 
+
+
+IF (@@ERROR = 0 AND @SP_Add_RetCode = 0) 
+BEGIN 
+
+DECLARE @LS_BackUpScheduleUID	As uniqueidentifier 
+DECLARE @LS_BackUpScheduleID	AS int 
+
+
+EXEC msdb.dbo.sp_add_schedule 
+		@schedule_name =N'LSBackupSchedule_FG-SQL-20121' 
+		,@enabled = 1 
+		,@freq_type = 4 
+		,@freq_interval = 1 
+		,@freq_subday_type = 4 
+		,@freq_subday_interval = 5 
+		,@freq_recurrence_factor = 0 
+		,@active_start_date = 20220221 
+		,@active_end_date = 99991231 
+		,@active_start_time = 0 
+		,@active_end_time = 235900 
+		,@schedule_uid = @LS_BackUpScheduleUID OUTPUT 
+		,@schedule_id = @LS_BackUpScheduleID OUTPUT 
+
+EXEC msdb.dbo.sp_attach_schedule 
+		@job_id = @LS_BackupJobId 
+		,@schedule_id = @LS_BackUpScheduleID  
+
+EXEC msdb.dbo.sp_update_job 
+		@job_id = @LS_BackupJobId 
+		,@enabled = 1 
+
+
+END 
+
+
+EXEC master.dbo.sp_add_log_shipping_alert_job 
+
+EXEC master.dbo.sp_add_log_shipping_primary_secondary 
+		@primary_database = N'AdventureWorks2012' 
+		,@secondary_server = N'MAPLE-SQL-2017.maple.fg.contoso.com' 
+		,@secondary_database = N'AdventureWorks2012' 
+		,@overwrite = 1 
+
+-- ****** End: Script to be run at Primary: [FG-SQL-2012]  ******
+
+```
+
+Result:
+
+![Log shipping on Primary](_images/log-ship-3.png)
+
+---
+
+**Run script on Secondary: `MAPLE-SQL-2017`**
+
+```SQL
+-- Execute the following statements at the Secondary to configure Log Shipping 
+-- for the database [MAPLE-SQL-2017.maple.fg.contoso.com].[AdventureWorks2012],
+-- the script needs to be run at the Secondary in the context of the [msdb] database. 
+------------------------------------------------------------------------------------- 
+-- Adding the Log Shipping configuration 
+
+-- ****** Begin: Script to be run at Secondary: [MAPLE-SQL-2017.maple.fg.contoso.com] ******
+
+
+DECLARE @LS_Secondary__CopyJobId	AS uniqueidentifier 
+DECLARE @LS_Secondary__RestoreJobId	AS uniqueidentifier 
+DECLARE @LS_Secondary__SecondaryId	AS uniqueidentifier 
+DECLARE @LS_Add_RetCode	As int 
+
+
+EXEC @LS_Add_RetCode = master.dbo.sp_add_log_shipping_secondary_primary 
+		@primary_server = N'FG-SQL-2012' 
+		,@primary_database = N'AdventureWorks2012' 
+		,@backup_source_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+		,@backup_destination_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+		,@copy_job_name = N'LSCopy_FG-SQL-2012_AdventureWorks2012' 
+		,@restore_job_name = N'LSRestore_FG-SQL-2012_AdventureWorks2012' 
+		,@file_retention_period = 4320 
+		,@overwrite = 1 
+		,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
+		,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
+		,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
+
+IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
+BEGIN 
+
+DECLARE @LS_SecondaryCopyJobScheduleUID	As uniqueidentifier 
+DECLARE @LS_SecondaryCopyJobScheduleID	AS int 
+
+
+EXEC msdb.dbo.sp_add_schedule 
+		@schedule_name =N'DefaultCopyJobSchedule' 
+		,@enabled = 1 
+		,@freq_type = 4 
+		,@freq_interval = 1 
+		,@freq_subday_type = 4 
+		,@freq_subday_interval = 5 
+		,@freq_recurrence_factor = 0 
+		,@active_start_date = 20220221 
+		,@active_end_date = 99991231 
+		,@active_start_time = 0 
+		,@active_end_time = 235900 
+		,@schedule_uid = @LS_SecondaryCopyJobScheduleUID OUTPUT 
+		,@schedule_id = @LS_SecondaryCopyJobScheduleID OUTPUT 
+
+EXEC msdb.dbo.sp_attach_schedule 
+		@job_id = @LS_Secondary__CopyJobId 
+		,@schedule_id = @LS_SecondaryCopyJobScheduleID  
+
+DECLARE @LS_SecondaryRestoreJobScheduleUID	As uniqueidentifier 
+DECLARE @LS_SecondaryRestoreJobScheduleID	AS int 
+
+
+EXEC msdb.dbo.sp_add_schedule 
+		@schedule_name =N'DefaultRestoreJobSchedule' 
+		,@enabled = 1 
+		,@freq_type = 4 
+		,@freq_interval = 1 
+		,@freq_subday_type = 4 
+		,@freq_subday_interval = 5 
+		,@freq_recurrence_factor = 0 
+		,@active_start_date = 20220221 
+		,@active_end_date = 99991231 
+		,@active_start_time = 0 
+		,@active_end_time = 235900 
+		,@schedule_uid = @LS_SecondaryRestoreJobScheduleUID OUTPUT 
+		,@schedule_id = @LS_SecondaryRestoreJobScheduleID OUTPUT 
+
+EXEC msdb.dbo.sp_attach_schedule 
+		@job_id = @LS_Secondary__RestoreJobId 
+		,@schedule_id = @LS_SecondaryRestoreJobScheduleID  
+
+
+END 
+
+
+DECLARE @LS_Add_RetCode2	As int 
+
+
+IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
+BEGIN 
+
+EXEC @LS_Add_RetCode2 = master.dbo.sp_add_log_shipping_secondary_database 
+		@secondary_database = N'AdventureWorks2012' 
+		,@primary_server = N'FG-SQL-2012' 
+		,@primary_database = N'AdventureWorks2012' 
+		,@restore_delay = 0 
+		,@restore_mode = 0 
+		,@disconnect_users	= 0 
+		,@restore_threshold = 45   
+		,@threshold_alert_enabled = 1 
+		,@history_retention_period	= 5760 
+		,@overwrite = 1 
+
+END 
+
+
+IF (@@error = 0 AND @LS_Add_RetCode = 0) 
+BEGIN 
+
+EXEC msdb.dbo.sp_update_job 
+		@job_id = @LS_Secondary__CopyJobId 
+		,@enabled = 1 
+
+EXEC msdb.dbo.sp_update_job 
+		@job_id = @LS_Secondary__RestoreJobId 
+		,@enabled = 1 
+
+END 
+
+
+-- ****** End: Script to be run at Secondary: [MAPLE-SQL-2017.maple.fg.contoso.com] ******
+
+```
+
+Result:
+
+![Log shipping on Secondary](_images/log-ship-5.png)
+
+---
+
+**Validate transactions are flowing**
+
+```SQL
+-- ============
+-- FG-SQL-2012
+-- ============
+-- Create dummy table
+USE AdventureWorks2012
+GO
+
+CREATE TABLE table1 (ID int, value nvarchar(10))
+GO
+
+INSERT INTO table1 VALUES (1, 'demo1')
+INSERT INTO table1 VALUES (2, 'demo4')
+INSERT INTO table1 VALUES (3, 'demo3')
+INSERT INTO table1 VALUES (4, 'demo4')
+INSERT INTO table1 VALUES (4, 'demo5')
+
+SELECT * FROM table1
+
+-- Run log shipping backup
+USE msdb ;  
+GO  
+  
+EXEC dbo.sp_start_job N'LSBackup_AdventureWorks2012';  
+GO  
+```
+
+Result:
+
+![Log shipping on Primary](_images/log-ship-6.png)
+
+Now even though we cannot access the Database, we can validate as follows:
+
+```SQL
+-- ============
+-- FG-SQL-2012
+-- ============
+SELECT   d.name, b.*
+FROM     master.sys.sysdatabases d
+LEFT OUTER JOIN msdb..backupset b ON b.database_name = d.name AND b.type = 'L'
+where d.name = 'AdventureWorks2012'
+ORDER BY backup_finish_date DESC
+
+-- ===============
+-- MAPLE-SQL-2017
+-- ===============
+SELECT b.type, b.first_lsn, b.last_lsn, b.checkpoint_lsn, b.database_backup_lsn, a.*
+FROM msdb..restorehistory a
+INNER JOIN msdb..backupset b ON a.backup_set_id = b.backup_set_id
+WHERE a.destination_database_name = 'AdventureWorks2012'
+ORDER BY restore_date DESC
+
+```
+
+We run some new transactions before the Log Shipping job has a chance to run within the 5 minute window, and see the different LSNs between 2012 and 2014:
+
+![Different LSNs](_images/log-ship-7.png)
+
+We trigger the Log Shipping jobs, and see the LSNs get aligned:
+
+![Same LSNs](_images/log-ship-8.png)
+
+Now, we onboard the SQL 2017 into the AG, and see if it shows up in MIAA:
+
+``` SQL
+ALTER AVAILABILITY GROUP [SQL2017-AG1] ADD DATABASE AdventureWorks2012;  
+GO 
+
+-- Msg 927, Level 14, State 2, Line 1
+-- Database 'AdventureWorks2012' cannot be opened. It is in the middle of a restore.
+
+```
+
+![Same LSNs](_images/log-ship-9.png)
+
+> The question is - how to onboard this Database to DAG now?
+> `TBD`
