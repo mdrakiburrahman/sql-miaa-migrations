@@ -39,7 +39,7 @@ spec:
   storage:
     backups:
       volumes:
-        - className: managed-premium
+        - className: azurefile
           size: 5Gi
     data:
       volumes:

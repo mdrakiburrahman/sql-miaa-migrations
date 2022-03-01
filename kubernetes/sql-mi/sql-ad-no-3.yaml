@@ -4,14 +4,14 @@ data:
   username: Ym9vcg==
 kind: Secret
 metadata:
-  name: sql-ad-no-2-login-secret
+  name: sql-ad-no-3-login-secret
   namespace: arc
 type: Opaque
 ---
 apiVersion: sql.arcdata.microsoft.com/v2
 kind: SqlManagedInstance
 metadata:
-  name: sql-ad-no-2
+  name: sql-ad-no-3
   namespace: arc
 spec:
   backup:
@@ -31,7 +31,7 @@ spec:
           cpu: "1"
           memory: 2Gi
   security:
-    adminLoginSecret: sql-ad-no-2-login-secret
+    adminLoginSecret: sql-ad-no-3-login-secret
   services:
     primary:
       type: LoadBalancer
