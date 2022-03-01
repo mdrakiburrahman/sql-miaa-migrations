@@ -31,7 +31,6 @@ A terraform-built demo environment for migrating various SQL Servers to Arc SQL 
   - [Keytab creation](#keytab-creation)
   - [SQL MI Deployment](#sql-mi-deployment)
   - [Create Windows Logins](#create-windows-logins)
-  - [Kerberos workaround for MAPLE](#kerberos-workaround-for-maple)
 - [MIAA - DAG migration setup](#miaa-migration-setup)
   - [DAG from SQL 2019](#dag-from-SQL-2019-to-MIAA)
   - [DAG from SQL 2017](#dag-from-SQL-2017-to-MIAA)
@@ -668,11 +667,10 @@ And we see the user get created:
 
 ![Create MAPLE Windows login in Arc MI after workaround](_images/windows-onboard-10.png)
 
-We can now sign in with `MAPLE\boor`:
+We can now sign in with `MAPLE\boor` - which proves our Child domain also works:
 
 ![Sign in as MAPLE user](_images/windows-onboard-11.png)
 
-Which proves our Child domain also works.
 ---
 
 # MIAA Migration Setup
