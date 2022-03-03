@@ -80,7 +80,8 @@ RUN wget --quiet https://releases.hashicorp.com/terraform/${TF_Version}/terrafor
 # Install Linux stuff
 RUN apt-get update \
     && apt-get install tree -y \
-    && apt-get install make -y
+    && apt-get install make -y \
+    && apt-get install -y kafkacat
 
 # Clean up
 RUN apt-get autoremove -y \

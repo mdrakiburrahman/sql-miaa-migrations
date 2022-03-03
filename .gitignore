@@ -31,3 +31,10 @@ override.tf.json
 # Certs
 *.pem
 *.cer
+*.crt
+*.p12
+*.jks
+
+
+# Env files
+*.env

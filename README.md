@@ -38,7 +38,8 @@ A terraform-built demo environment for migrating various SQL Servers to Arc SQL 
   - [DAG from SQL 2022](#dag-from-SQL-2022-to-MIAA)
   - [DAG from Azure SQL MI](#dag-from-Azure-SQL-MI-to-MIAA)
 - [MIAA - Log shipping migration setup](#miaa-log-shipping-migration-setup)
-  - [Log shipping from SQL 2012-2016 to 2019, DAG over](#log-shipping-from-SQL-2012-to-2016-to-MIAA)
+  - [Log shipping from SQL 2012-2016 to 2019, DAG over to MIAA](#log-shipping-from-SQL-2012-to-2016-to-MIAA)
+  - [Log shipping from SQL 2012 to MIAA](#log-shipping-from-SQL-2012-to-MIAA)
 
 ## Infrastructure Deployment
 
@@ -1618,7 +1619,674 @@ GO
 
 ![Same LSNs](_images/log-ship-9.png)
 
-> The question is - how to onboard this Database to DAG now?
-> `TBD`
+> This means Log Shipping and AGs cannot work together when your Primary is older than Staging.
 
-> Retry above with `RECOVERY` and see if Log Replication works.
+--- 
+
+## Log shipping from SQL 2012 to MIAA
+
+> **Plan**: 2012 → Log Shipping → MIAA
+
+**Create Windows NFS on `MAPLE-DC-1`**
+
+```powershell
+Get-WindowsFeature *nfs*
+
+Install-WindowsFeature FS-NFS-Service -IncludeAllSubFeature -IncludeManagementTools
+
+Get-WindowsFeature *nfs*
+```
+
+![Untitled](_images/Untitled.png)
+
+```powershell
+mkdir 'C:\NFSLogs'
+New-NfsShare -Name 'LogShippingNFS' -Path 'C:\NFSLogs' -EnableAnonymousAccess $True
+
+# MAPLE-DC-1-vm:/LogShippingNFS
+```
+
+![Untitled](_images/Untitled%201.png)
+
+Grant access to all:
+
+![Untitled](_images/Untitled%202.png)
+
+Note - to avoid the following error when mounting NFS to Pod:
+
+![Untitled](_images/Untitled%203.png)
+
+[](https://unix.stackexchange.com/questions/213837/permission-denied-when-trying-to-access-mounted-windows-nfs)
+
+This setting needs to be check marked:
+
+![Untitled](_images/Untitled%204.png)
+
+[Configure Unmapped UNIX User Access](https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-R2-and-2008/hh509017(v=ws.10)?redirectedfrom=MSDN#overview-of-unmapped-unix-user-access)
+
+Final setup on Windows side:
+
+![Untitled](_images/Untitled%205.png)
+
+---
+
+**Mount NFS on FG-2012**
+
+[How To Mount An NFS Share In Windows Server 2016](https://www.rootusers.com/how-to-mount-an-nfs-share-in-windows-server-2016/)
+
+```powershell
+Install-WindowsFeature NFS-Client
+mount -o anon "MAPLE-DC-1-vm.maple.fg.contoso.com:/LogShippingNFS" X:
+# And we see a sample file we put in
+```
+
+![Untitled](_images/Untitled%206.png)
+
+---
+
+**Mount from simple K8s Pod**
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp
+  namespace: default
+spec:
+  containers:
+  - name: myapp
+    image: busybox
+    command: ["/bin/sh", "-ec", "sleep 1000"]
+    volumeMounts:
+      - name: nfs
+        mountPath: /var/nfs
+  volumes:
+  - name: nfs
+    nfs:
+      server: MAPLE-DC-1-vm.maple.fg.contoso.com
+      path: "/LogShippingNFS"
+EOF
+```
+
+We see the sample file:
+
+![Untitled](_images/Untitled%207.png)
+
+---
+
+**Configure full backup on 2012 source**
+
+```sql
+-- ============
+-- FG-SQL-2012
+-- ============
+-- Create Database
+CREATE DATABASE LogShipTest
+GO
+
+-- CREATE TABLE
+USE LogShipTest
+GO
+
+CREATE TABLE table1 (ID int, value nvarchar(10))
+GO
+
+INSERT INTO table1 VALUES (1, 'demo1')
+INSERT INTO table1 VALUES (2, 'demo2')
+INSERT INTO table1 VALUES (3, 'demo3')
+INSERT INTO table1 VALUES (4, 'demo4')
+
+SELECT * FROM table1
+
+-- Change Database to Full Recovery mode
+ALTER DATABASE LogShipTest SET RECOVERY FULL
+GO
+
+-- Verify
+SELECT name, compatibility_level, recovery_model, recovery_model_desc, state_desc
+FROM sys.databases
+WHERE name = 'LogShipTest'
+
+-- name						compatibility_level	recovery_model	recovery_model_desc		state_desc
+-- LogShipTest		100					1				FULL					ONLINE
+
+-- Make a directory under the share named Full - X:\Full
+-- Backup to share - need to use UNC Path and not mapped drive for SQL Server!
+BACKUP DATABASE LogShipTest TO DISK = '\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Full\LogShipTest.bak'
+```
+
+![Untitled](_images/Untitled%208.png)
+
+---
+
+**Expose MIAA Pod as Service**
+
+We will need to connect to the TDS endpoint to perform CAG operations:
+
+```bash
+kubectl expose pod sql-ad-no-1-0 -n arc --port=1533 --name=sql-ad-no-1-pod --type=LoadBalancer
+
+kubectl get service/sql-ad-no-1-pod -n arc
+# 20.120.74.106,1533
+```
+
+Make DNS entry to Pod SVC:
+
+```powershell
+Add-DnsServerResourceRecordA -Name sql-ad-no-1-pod -ZoneName fg.contoso.com -IPv4Address 40.76.150.91 # AKS LB
+```
+
+Now we can connect to Pod:
+
+![Untitled](_images/Untitled%209.png)
+
+---
+
+**Ensure SQL Server Agent is running in Pod**
+
+We will need this to try out Log Replication Jobs
+
+```bash
+# Before:
+kubectl get sqlmi sql-ad-no-1 -n arc -o=jsonpath='{.spec.settings.sqlagent.enabled}'
+# false
+
+# Turn on
+payload='{"spec":{"settings":{"sqlagent":{"enabled":true}}}}'
+kubectl patch sqlmi sql-ad-no-1 -n arc --type merge --patch $payload
+
+# Controller triggers Pod restart
+
+# After:
+kubectl get sqlmi sql-ad-no-1 -n arc -o=jsonpath='{.spec.settings.sqlagent.enabled}'
+# true
+```
+
+![Untitled](_images/Untitled%2010.png)
+
+We see:
+
+![Untitled](_images/Untitled%2011.png)
+
+---
+
+**Modify StatefulSet with NFS mount, verify above full backup is visible**
+
+We edit the STS config in 2 spots for the `arc-sqlmi` pod:
+
+```bash
+kubectl edit sts sql-ad-no-1 -n arc
+...
+**volumeMounts:**
+      - name: nfs
+        mountPath: /var/nfs
+...
+**volumes**:
+- name: nfs
+  nfs:
+    server: MAPLE-DC-1-vm.maple.fg.contoso.com
+    path: "/LogShippingNFS"
+
+# statefulset.apps/sql-ad-no-1 edited
+
+```
+
+![Untitled](_images/Untitled%2012.png)
+
+![Untitled](_images/Untitled%2013.png)
+
+**Validate full backup is visible:**
+
+```bash
+# Reboot pod for STS to take effect
+kubectl delete pod sql-ad-no-1-0 -n arc --grace-period=0 --force
+
+kubectl exec -it sql-ad-no-1-0 -n arc -c arc-sqlmi -- /bin/sh
+
+cd /var/nfs/Full
+```
+
+![Untitled](_images/Untitled%2014.png)
+
+---
+
+**Setup Log Shipping as Usual**
+
+First, restore full backup in Pod:
+
+```sql
+-- ===============
+-- MIAA
+-- ===============
+-- View file names
+USE master;
+GO
+
+RESTORE FILELISTONLY 
+FROM DISK = N'/var/nfs/Full/LogShipTest.bak'
+GO
+
+-- Restore full backup with No Recovery (for Log Shipping)
+USE [master]
+RESTORE DATABASE [LogShipTest] FROM  DISK = N'/var/nfs/Full/LogShipTest.bak' WITH  FILE = 1,  MOVE N'LogShipTest' TO N'/var/opt/mssql/data/LogShipTest.mdf',  MOVE N'LogShipTest_log' TO N'/var/opt/mssql/data/LogShipTest_log.ldf',  NORECOVERY,  NOUNLOAD,  STATS = 5
+
+GO
+```
+
+![Untitled](_images/Untitled%2015.png)
+
+![Untitled](_images/Untitled%2016.png)
+
+---
+
+**Run Log Shipping Agent enablement script on Primary: `FG-SQL-2012`**
+
+```sql
+-- Execute the following statements at the Primary to configure Log Shipping 
+-- for the database [FG-SQL-2012].[LogShipTest],
+-- The script needs to be run at the Primary in the context of the [msdb] database.  
+------------------------------------------------------------------------------------- 
+-- Adding the Log Shipping configuration 
+
+-- ****** Begin: Script to be run at Primary: [FG-SQL-2012] ******
+
+DECLARE @LS_BackupJobId	AS uniqueidentifier 
+DECLARE @LS_PrimaryId	AS uniqueidentifier 
+DECLARE @SP_Add_RetCode	As int 
+
+EXEC @SP_Add_RetCode = master.dbo.sp_add_log_shipping_primary_database 
+		@database = N'LogShipTest' 
+		,@backup_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Logs' 
+		,@backup_share = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Logs' 
+		,@backup_job_name = N'LSBackup_LogShipTest' 
+		,@backup_retention_period = 4320
+		,@backup_compression = 2
+		,@backup_threshold = 60 
+		,@threshold_alert_enabled = 1
+		,@history_retention_period = 5760 
+		,@backup_job_id = @LS_BackupJobId OUTPUT 
+		,@primary_id = @LS_PrimaryId OUTPUT 
+		,@overwrite = 1 
+
+IF (@@ERROR = 0 AND @SP_Add_RetCode = 0) 
+BEGIN 
+
+DECLARE @LS_BackUpScheduleUID	As uniqueidentifier 
+DECLARE @LS_BackUpScheduleID	AS int 
+
+EXEC msdb.dbo.sp_add_schedule 
+		@schedule_name =N'LSBackupSchedule_FG-SQL-2012' 
+		,@enabled = 1 
+		,@freq_type = 4 
+		,@freq_interval = 1 
+		,@freq_subday_type = 4 
+		,@freq_subday_interval = 5 
+		,@freq_recurrence_factor = 0 
+		,@active_start_date = 20220221 
+		,@active_end_date = 99991231 
+		,@active_start_time = 0 
+		,@active_end_time = 235900 
+		,@schedule_uid = @LS_BackUpScheduleUID OUTPUT 
+		,@schedule_id = @LS_BackUpScheduleID OUTPUT 
+
+EXEC msdb.dbo.sp_attach_schedule 
+		@job_id = @LS_BackupJobId 
+		,@schedule_id = @LS_BackUpScheduleID  
+
+EXEC msdb.dbo.sp_update_job 
+		@job_id = @LS_BackupJobId 
+		,@enabled = 1 
+
+END 
+
+EXEC master.dbo.sp_add_log_shipping_alert_job 
+
+EXEC master.dbo.sp_add_log_shipping_primary_secondary 
+		@primary_database = N'LogShipTest' 
+		,@secondary_server = N'sql-ad-no-1-pod.fg.contoso.com,1533' 
+		,@secondary_database = N'LogShipTest' 
+		,@overwrite = 1 
+
+-- ****** End: Script to be run at Primary: [FG-SQL-2012]  ******
+```
+
+![Untitled](_images/Untitled%2017.png)
+
+---
+
+**Compare LSNs - before**
+
+```sql
+-- ============
+-- FG-SQL-2012
+-- ============
+SELECT   d.name, b.*
+FROM     master.sys.sysdatabases d
+LEFT OUTER JOIN msdb..backupset b ON b.database_name = d.name AND b.type = 'L'
+where d.name = 'LogShipTest'
+ORDER BY backup_finish_date DESC
+
+-- ===============
+-- MIAA
+-- ===============
+SELECT b.type, b.first_lsn, b.last_lsn, b.checkpoint_lsn, b.database_backup_lsn, a.*
+FROM msdb..restorehistory a
+INNER JOIN msdb..backupset b ON a.backup_set_id = b.backup_set_id
+WHERE a.destination_database_name = 'LogShipTest'
+ORDER BY restore_date DESC
+```
+
+![Bottom has only one Full Backup, top has many Log backups](_images/Untitled%2018.png)
+
+Bottom has only one Full Backup, top has many Log backups
+
+---
+
+**Run Log Shipping Agent enablement  on Secondary: `sql-ad-no-1-pod.fg.contoso.com,1533`**
+
+```sql
+-- Execute the following statements at the Secondary to configure Log Shipping 
+-- for the database [sql-ad-no-1-pod.fg.contoso.com,1533].[LogShipTest],
+-- the script needs to be run at the Secondary in the context of the [msdb] database. 
+------------------------------------------------------------------------------------- 
+-- Adding the Log Shipping configuration 
+
+-- ****** Begin: Script to be run at Secondary: [sql-ad-no-1-pod.fg.contoso.com,1533] ******
+
+DECLARE @LS_Secondary__CopyJobId	AS uniqueidentifier 
+DECLARE @LS_Secondary__RestoreJobId	AS uniqueidentifier 
+DECLARE @LS_Secondary__SecondaryId	AS uniqueidentifier 
+DECLARE @LS_Add_RetCode	As int 
+
+EXEC @LS_Add_RetCode = master.dbo.sp_add_log_shipping_secondary_primary 
+		@primary_server = N'FG-SQL-2012.fg.contoso.com' 
+		,@primary_database = N'LogShipTest' 
+		,@backup_source_directory = N'/var/nfs/logs' 
+		,@backup_destination_directory = N'/var/nfs/logs' 
+		,@copy_job_name = N'LSCopy_FG-SQL-2012_LogShipTest' 
+		,@restore_job_name = N'LSRestore_FG-SQL-2012_LogShipTest' 
+		,@file_retention_period = 4320 
+		,@overwrite = 1 
+		,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
+		,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
+		,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
+
+IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
+BEGIN 
+
+DECLARE @LS_SecondaryCopyJobScheduleUID	As uniqueidentifier 
+DECLARE @LS_SecondaryCopyJobScheduleID	AS int 
+
+EXEC msdb.dbo.sp_add_schedule 
+		@schedule_name =N'DefaultCopyJobSchedule' 
+		,@enabled = 1 
+		,@freq_type = 4 
+		,@freq_interval = 1 
+		,@freq_subday_type = 4 
+		,@freq_subday_interval = 5 
+		,@freq_recurrence_factor = 0 
+		,@active_start_date = 20220221 
+		,@active_end_date = 99991231 
+		,@active_start_time = 0 
+		,@active_end_time = 235900 
+		,@schedule_uid = @LS_SecondaryCopyJobScheduleUID OUTPUT 
+		,@schedule_id = @LS_SecondaryCopyJobScheduleID OUTPUT 
+
+EXEC msdb.dbo.sp_attach_schedule 
+		@job_id = @LS_Secondary__CopyJobId 
+		,@schedule_id = @LS_SecondaryCopyJobScheduleID  
+
+DECLARE @LS_SecondaryRestoreJobScheduleUID	As uniqueidentifier 
+DECLARE @LS_SecondaryRestoreJobScheduleID	AS int 
+
+EXEC msdb.dbo.sp_add_schedule 
+		@schedule_name =N'DefaultRestoreJobSchedule' 
+		,@enabled = 1 
+		,@freq_type = 4 
+		,@freq_interval = 1 
+		,@freq_subday_type = 4 
+		,@freq_subday_interval = 5 
+		,@freq_recurrence_factor = 0 
+		,@active_start_date = 20220221 
+		,@active_end_date = 99991231 
+		,@active_start_time = 0 
+		,@active_end_time = 235900 
+		,@schedule_uid = @LS_SecondaryRestoreJobScheduleUID OUTPUT 
+		,@schedule_id = @LS_SecondaryRestoreJobScheduleID OUTPUT 
+
+EXEC msdb.dbo.sp_attach_schedule 
+		@job_id = @LS_Secondary__RestoreJobId 
+		,@schedule_id = @LS_SecondaryRestoreJobScheduleID  
+
+END 
+
+DECLARE @LS_Add_RetCode2	As int 
+
+IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
+BEGIN 
+
+EXEC @LS_Add_RetCode2 = master.dbo.sp_add_log_shipping_secondary_database 
+		@secondary_database = N'LogShipTest' 
+		,@primary_server = N'FG-SQL-2012.fg.contoso.com' 
+		,@primary_database = N'LogShipTest' 
+		,@restore_delay = 0 
+		,@restore_mode = 0 
+		,@disconnect_users	= 0 
+		,@restore_threshold = 45   
+		,@threshold_alert_enabled = 1 
+		,@history_retention_period	= 5760 
+		,@overwrite = 1 
+
+END 
+
+IF (@@error = 0 AND @LS_Add_RetCode = 0) 
+BEGIN 
+
+EXEC msdb.dbo.sp_update_job 
+		@job_id = @LS_Secondary__CopyJobId 
+		,@enabled = 1 
+
+EXEC msdb.dbo.sp_update_job 
+		@job_id = @LS_Secondary__RestoreJobId 
+		,@enabled = 1 
+
+END 
+
+-- ****** End: Script to be run at Secondary: [sql-ad-no-1-pod.fg.contoso.com,1533] ******
+```
+
+And we see an error that tells us Log Shipping is not enabled in MI SKU:
+
+![Untitled](_images/Untitled%2019.png)
+
+```sql
+Msg 32017, Level 16, State 1, Procedure sys.sp_MSlogshippingsysadmincheck, Line 35 [Batch Start Line 0]
+Log shipping is supported on Enterprise, Developer and Standard editions of SQL Server. This instance has General Purpose (64-bit) and is not supported.
+```
+
+---
+
+**Try same steps on BC 1 replica**
+
+Same error:
+
+![Untitled](_images/Untitled%2020.png)
+
+```sql
+Msg 32017, Level 16, State 1, Procedure sys.sp_MSlogshippingsysadmincheck, Line 35 [Batch Start Line 0]
+Log shipping is supported on Enterprise, Developer and Standard editions of SQL Server. This instance has Business Critical (64-bit) and is not supported.
+```
+
+---
+
+So we will proceed forward with Poor Man’s Log Shipping (restore manually on MIAA side) - great article!
+
+[Your poor-man's SQL Server Log Shipping](http://www.edwinmsarmiento.com/your-poor-mans-sql-server-log-shipping/)
+
+---
+
+**`INSERT` a table and some data in Primary**
+
+We simulate some ongoing transactions in Primary 2012:
+
+```sql
+-- CREATE TABLE
+USE LogShipTest
+GO
+
+CREATE TABLE table2 (ID int, value nvarchar(10))
+GO
+
+INSERT INTO table2 VALUES (1, 'repldemo1')
+INSERT INTO table2 VALUES (2, 'repldemo2')
+
+SELECT * FROM table2
+```
+
+![Untitled](_images/Untitled%2021.png)
+
+---
+
+**Manually apply the backups on BC**
+
+Excel for generating T-SQL, in reality we should build this into the Controller:
+
+![Untitled](_images/Untitled%2022.png)
+
+```sql
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303143503.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303143508.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10 
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303144000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303144500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303145000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303145501.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303150000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303150500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303151000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303151501.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303152001.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303152500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303153000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303153500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303154000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303154500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303155000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303155501.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303160000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303160500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303161000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303161501.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303162000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303162500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303164000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303164500.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303165000.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303165501.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+RESTORE LOG [LogShipTest] FROM  DISK = N'/var/nfs/Logs/LogShipTest_20220303171543.trn' WITH  FILE = 1, NORECOVERY,  NOUNLOAD,  STATS = 10
+```
+
+![Untitled](_images/Untitled%2023.png)
+
+---
+
+**Manually apply the backups on GP as well**
+
+![Untitled](_images/Untitled%2024.png)
+
+---
+
+**Stop sending logs AKA Cutover**
+
+In reality, this is were we stop flow from apps and throw up a maintenance page.
+
+We then stop Log Shipping:
+
+![Untitled](_images/Untitled%2025.png)
+
+![Untitled](_images/Untitled%2026.png)
+
+---
+
+**Match LSN on Primary and Secondary**
+
+```sql
+-- ============
+-- FG-SQL-2012
+-- ============
+SELECT   d.name, b.first_lsn, b.last_lsn, b.*
+FROM     master.sys.sysdatabases d
+LEFT OUTER JOIN msdb..backupset b ON b.database_name = d.name AND b.type = 'L'
+where d.name = 'LogShipTest'
+ORDER BY backup_finish_date DESC
+
+-- ===============
+-- MIAA
+-- ===============
+SELECT b.type, b.first_lsn, b.last_lsn, b.checkpoint_lsn, b.database_backup_lsn, a.*
+FROM msdb..restorehistory a
+INNER JOIN msdb..backupset b ON a.backup_set_id = b.backup_set_id
+WHERE a.destination_database_name = 'LogShipTest'
+ORDER BY restore_date DESC
+```
+
+![LSNs match](_images/Untitled%2027.png)
+
+LSNs match
+
+---
+
+**Restore MIAA Database and query**
+
+```sql
+-- GP and BC
+RESTORE DATABASE [LogShipTest] WITH RECOVERY;
+
+-- Validate our new table above
+USE LogShipTest
+GO
+
+SELECT * FROM table2
+```
+
+![Untitled](_images/Untitled%2028.png)
+
+![Untitled](_images/Untitled%2029.png)
+
+---
+
+**Add Database to CAG**
+
+```sql
+-- GP
+USE MASTER;
+GO
+ 
+ALTER AVAILABILITY GROUP [sql-ad-no-1] ADD DATABASE LogShipTest
+
+-- BC
+ALTER AVAILABILITY GROUP [sql-bc-1] ADD DATABASE LogShipTest
+```
+
+![Untitled](_images/Untitled%2030.png)
+
+---
+
+**Connect and query via CAG**
+
+![GP](_images/Untitled%2031.png)
+
+GP
+
+![BC](_images/Untitled%2032.png)
+
+BC
+
+---
+
+**Gotchas:**
+
+- Any changes to the CRD removes the STS changes we made with mounting the NFS
+    - Solution would be more robust if NFS could be mounted via CRD
+- Approach won’t work with BC 2+ replica
+- As a feature enhancement, either we enable Log Replication in GP + BC images/SKUs, or make a custom job that can replicate
