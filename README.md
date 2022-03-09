@@ -653,6 +653,10 @@ GO
 
 In `security.log`:
 ```bash
+# Tail the Kerberos logs to see what happens when you create the users
+# security.log
+kubectl exec sql-ad-yes-1-0 -n arc -c arc-sqlmi -- tail /var/opt/mssql/log/security.log --follow
+
 # Successful for FG\boor
 02/16/2022 13:51:16.571453412 Debug [security.kerberos] <0000001361/0x00000330> Processing SSPI operation 0x0000000D
 02/16/2022 13:51:16.673826368 Debug [security.kerberos] <0000001361/0x00000330> SSPI operation 0x0000000D returned status: [Status: 0x0 Success errno = 0x0(0) Success]
