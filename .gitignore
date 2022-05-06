@@ -38,3 +38,6 @@ override.tf.json
 
 # Env files
 *.env
+
+# AKS AD test
+aks_ad/*
