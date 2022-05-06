@@ -578,8 +578,7 @@ kubectl apply -f service-account.yaml
 kubectl apply -f deploy-job.yaml
 
 # View keytab secret
-kubectl get secret sql-ad-yes-1-keytab-secret -n arc -o go-template='
-{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'
+kubectl get secret sql-ad-yes-1-keytab-secret -n arc -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'
 ```
 
 ---

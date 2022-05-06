@@ -215,7 +215,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     node_count          = 3
     vm_size             = "Standard_DS3_v2"
     type                = "VirtualMachineScaleSets"
-    enable_auto_scaling = true
+    enable_auto_scaling = false
     min_count           = 1
     max_count           = 3
 
