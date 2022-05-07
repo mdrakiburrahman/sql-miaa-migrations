@@ -73,3 +73,9 @@ variable "user_password" {
   type        = string
   default     = "P@s5w0rd123!!"
 }
+
+variable "public_ip_id" {
+  description = "Public IP ID to assign to the NIC"
+  type        = string
+  default     = null
+}

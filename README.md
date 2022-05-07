@@ -2293,3 +2293,52 @@ BC
     - Solution would be more robust if NFS could be mounted via CRD
 - Approach won’t work with BC 2+ replica
 - As a feature enhancement, either we enable Log Replication in GP + BC images/SKUs, or make a custom job that can replicate
+
+---
+
+# Active Directory + Failover Group Testing
+
+`TO-DOs`:
+1. Create same AD Account and Keytab for both MIs, shove in SPNs for FoG, MI-1 and MI-2 in there
+
+
+## Infrastructure Deployment
+The following script deploys the AD environment with Terraform:
+```bash
+# ---------------------
+# ENVIRONMENT VARIABLES
+# For Terraform
+# ---------------------
+# Secrets
+export TF_VAR_SPN_CLIENT_ID=$spnClientId
+export TF_VAR_SPN_CLIENT_SECRET=$spnClientSecret
+export TF_VAR_SPN_TENANT_ID=$spnTenantId
+export TF_VAR_SPN_SUBSCRIPTION_ID=$subscriptionId
+export TF_VAR_VM_USER_PASSWORD=$localPassword # RDP password for VMs
+
+# Module specific
+export TF_VAR_resource_group_name='ad-fog-test-rg'
+
+# ---------------------
+# DEPLOY TERRAFORM
+# ---------------------
+cd /workspaces/sql-miaa-migrations/terraform-aks-ad
+terraform init
+terraform plan
+terraform apply -auto-approve
+
+# ---------------------
+# DESTROY ENVIRONMENT
+# ---------------------
+terraform destroy -auto-approve
+
+# ---------------------
+# TERRAFORM CLEANUP
+# ---------------------
+rm -rf .terraform
+rm .terraform.lock.hcl
+rm terraform.tfstate 
+rm terraform.tfstate.backup
+
+```
+Follow [DC Creation Post Deployment Steps above](#post-deployment-windows-vms)

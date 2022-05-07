@@ -8,6 +8,7 @@ resource "azurerm_network_interface" "example" {
     subnet_id                     = var.subnet_id
     private_ip_address_allocation = "Static" // Static because these are domain controllers
     private_ip_address            = var.private_ip
+    public_ip_address_id          = var.public_ip_id
   }
 
   tags = var.tags
