@@ -2295,6 +2295,19 @@ BC
 - As a feature enhancement, either we enable Log Replication in GP + BC images/SKUs, or make a custom job that can replicate
 
 ---
+# Kubernetes Dashboard
+```bash
+# Apply
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.5.0/aio/deploy/recommended.yaml
+
+# Expose
+kubectl expose deployment kubernetes-dashboard -n kubernetes-dashboard --type=LoadBalancer --name=kubernetes-dashboard-external-svc --port=8001 --target-port=8443
+
+kubectl proxy
+# https://20.88.184.53:8001/
+# Point to kubeconfig
+```
+---
 
 # Active Directory + Failover Group Testing
 

@@ -66,27 +66,27 @@ resource "azurerm_network_security_group" "nsg" {
   resource_group_name = var.resource_group_name
 
   security_rule {
-    name                       = "allow_rdp_sg"
+    name                       = "allow_all_home_sg"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "*"
     source_port_range          = "*"
-    destination_port_range     = "3389"
+    destination_port_range     = "*"
     destination_address_prefix = "*"
     source_address_prefixes    = local.my_ips
   }
 
   security_rule {
-    name                       = "allow_tde_sg"
+    name                       = "allow_all_azure_sg"
     priority                   = 200
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "*"
     source_port_range          = "*"
-    destination_port_range     = "31433"
+    destination_port_range     = "*"
     destination_address_prefix = "*"
-    source_address_prefixes    = local.my_ips
+    source_address_prefix      = "AzureCloud"
   }
 
   tags = var.tags
