@@ -56,6 +56,10 @@ resource "azurerm_public_ip" "rdp_pip" {
   tags = var.tags
 }
 
+locals {
+  my_ips = ["99.192.0.0/10", "167.192.0.0/10"] # My IPs
+}
+
 resource "azurerm_network_security_group" "nsg" {
   name                = "rdp_nsg"
   location            = var.resource_group_location
@@ -66,11 +70,23 @@ resource "azurerm_network_security_group" "nsg" {
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
-    protocol                   = "Tcp"
+    protocol                   = "*"
     source_port_range          = "*"
     destination_port_range     = "3389"
     destination_address_prefix = "*"
-    source_address_prefixes    = ["0.0.0.0/0"] # My IPs
+    source_address_prefixes    = local.my_ips
+  }
+
+  security_rule {
+    name                       = "allow_tde_sg"
+    priority                   = 200
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "31433"
+    destination_address_prefix = "*"
+    source_address_prefixes    = local.my_ips
   }
 
   tags = var.tags
@@ -78,6 +94,16 @@ resource "azurerm_network_security_group" "nsg" {
 
 resource "azurerm_network_interface_security_group_association" "association" {
   network_interface_id      = module.fg_dc_1.nic_id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "dc_subnet" {
+  subnet_id                 = lookup(module.vnet.vnet_subnets_name_id, "FG-DC")
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "aks_subnet" {
+  subnet_id                 = lookup(module.vnet.vnet_subnets_name_id, "AKS")
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
