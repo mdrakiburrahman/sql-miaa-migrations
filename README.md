@@ -2750,7 +2750,7 @@ nslookup gpm0mi00.fg.contoso.com
 
 ![Repoint via DNS](_images/ad-dns-repoint.png)
 
-## Setup FoG - Azure CLI
+## Setup FoG via Azure CLI
 
 > We first do this via Azure CLI so we can figure out what to do in the Kube-Native manner
 
@@ -3048,7 +3048,7 @@ kubectl delete job kube-keytab-secret-generator -n $dr_ns
 
 And we repeat the steps above until we have 2 SQL MIs that are AD + DNS Onboarded - except now we'll create the FoG via kubectl.
 
-## Setup FoG - Kube-Native
+## Setup FoG via Kube-Native
 ```bash
 # = = = = = = =
 # Get certs
