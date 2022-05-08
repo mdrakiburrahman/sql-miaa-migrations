@@ -1,0 +1,43 @@
+apiVersion: sql.arcdata.microsoft.com/v1beta2
+kind: FailoverGroup
+metadata:
+  creationTimestamp: "2022-05-07T22:29:03Z"
+  generation: 1
+  name: gpm0mi00
+  namespace: arc-dr
+  ownerReferences:
+  - apiVersion: sql.arcdata.microsoft.com/v5
+    kind: SqlManagedInstance
+    name: gpm0mi02
+    uid: 2cbd639b-ab1a-4816-80d8-23cccdedf070
+  resourceVersion: "69311"
+  uid: ba56afdd-8d0a-4b6e-b42f-1462cfe9623c
+spec:
+  partnerMI: gpm0mi01
+  partnerMirroringCert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIDUjCCAjqgAwIBAgIJAPhXOyoNABiIMA0GCSqGSIb3DQEBCwUAMCgxJjAkBgNVBAMTHUNsdXN0
+    ZXIgQ2VydGlmaWNhdGUgQXV0aG9yaXR5MB4XDTIyMDUwNzIwMjAxN1oXDTI3MDUwNjIwMjAxN1ow
+    DjEMMAoGA1UEAxMDZGJtMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuJ3slrDXHvFk
+    H6FyzfqNBuQZIPdz8o4+/CoGDyKg1P9rGd5t7KptwmUMK6F4IxZ3ox93MzXb2CPOQRNAUdNnhFmM
+    JlSt86cfebBZ4rKmkOTJfCLUBJJikin3nS6+kqnEU5n37w9SQyW0HKBFIR2rytqtBKyDdFJ7J4FI
+    AGOT7ItnyHHP9r+ANrXlp0Sx3N9X24HvqTXkzJWGRdD7s894emM39m5PhOYE2Cb3wcICosXuoY6E
+    BWdi5J9DPgy3ek50OMuGZkUsmnZ8L2Xd5sigzBj5atZXhSkrwGuT0ljv3VS/zemcc3nbUUGLi+MC
+    Jl85jfTlI3Uw7MscSu8bxxy2DQIDAQABo4GYMIGVMCAGA1UdJQEB/wQWMBQGCCsGAQUFBwMCBggr
+    BgEFBQcDATAOBgNVHQ8BAf8EBAMCBaAwYQYDVR0RBFowWIIMZ3BtMG1pMDEtc3ZjgipncG0wbWkw
+    MS1zdmMuYXJjLXByaW1hcnkuc3ZjLmNsdXN0ZXIubG9jYWyCHGdwbTBtaTAxLXN2Yy5hcmMtcHJp
+    bWFyeS5zdmMwDQYJKoZIhvcNAQELBQADggEBAFPzKGjAz6xr53EBO4iQTcydhK3Y2RPnFsPqkSsF
+    vs+erJ2Abb+lTcUValEsbZsRm0jdY1ASa6uYSlM4Gj4Fl4R9KzkdZFDiLzglHQFJob0yxzE08Srm
+    rUXdACjS8xtzwf/DtjpKDt6DwUIEoDk+PtrZeFZPGwyfMehaaUJv0rV2gt8cG+LCRaQ0+nDZxuGS
+    3LQUo3f3nOto6zweC7K+Dc/Dz3bgUDOaqFZb6PhmXQOQzk94nHwlQhfRe2TuKfD9sUTRqewoFfJR
+    BEeEb7T1W6Sj0IEMysX7rfGzSWMRh9Ezc5TW9n+E9RNMUp1zOh/2T3Tk66A5UwK8y02oCOKSJIU=
+    -----END CERTIFICATE-----
+  partnerMirroringURL: tcp://20.102.10.214:5022
+  role: secondary
+  sharedName: gpm0mi00
+  sourceMI: gpm0mi02
+status:
+  lastUpdateTime: "2022-05-07T22:29:04.139407Z"
+  results: ""
+  role: Secondary
+  state: Succeeded

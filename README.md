@@ -101,13 +101,13 @@ $secureDomainAdminPassword = $domainAdminPassword | ConvertTo-SecureString -AsPl
 
 Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
 
-# Create Active Directory Forest
+# Create Active Directory Forest - FG
 Install-ADDSForest `
     -DomainName "$domainName" `
     -CreateDnsDelegation:$false `
     -DatabasePath "C:\Windows\NTDS" `
     -DomainMode "7" `
-    -DomainNetbiosName $domainName.Split('.')[0].ToUpper() ` # FG
+    -DomainNetbiosName $domainName.Split('.')[0].ToUpper() `
     -ForestMode "7" `
     -InstallDns:$true `
     -LogPath "C:\Windows\NTDS" `
@@ -117,7 +117,7 @@ Install-ADDSForest `
     -SafeModeAdministratorPassword $secureDomainAdminPassword
 ```
 
-After the reboot, we can login via Bastion as our Domain Admin `boor@fg.contoso.com`.
+After the reboot, we can login via Bastion as our Domain Admin `boor@fg.contoso.com` or `FG\boor`.
 
 ---
 
@@ -502,18 +502,18 @@ $search.filter = "(servicePrincipalName=*)"
 $results = $search.Findall()
 
 foreach( $result in $results ) {
-	$userEntry = $result.GetDirectoryEntry()
-	Write-host "Object Name	=	"	$userEntry.name -backgroundcolor "yellow" -foregroundcolor "black"
-	Write-host "DN	=	"	$userEntry.distinguishedName
-	Write-host "Object Cat.	=	" $userEntry.objectCategory
-	Write-host "servicePrincipalNames"
+    $userEntry = $result.GetDirectoryEntry()
+    Write-host "Object Name    =    "    $userEntry.name -backgroundcolor "yellow" -foregroundcolor "black"
+    Write-host "DN    =    "    $userEntry.distinguishedName
+    Write-host "Object Cat.    =    " $userEntry.objectCategory
+    Write-host "servicePrincipalNames"
 
-	$i=1
-	foreach( $SPN in $userEntry.servicePrincipalName ) {
-		Write-host "SPN ${i} =$SPN"
-		$i+=1
-	}
-	Write-host ""
+    $i=1
+    foreach( $SPN in $userEntry.servicePrincipalName ) {
+        Write-host "SPN ${i} =$SPN"
+        $i+=1
+    }
+    Write-host ""
 }
 
 ##########################################################################################
@@ -837,12 +837,12 @@ Then, we create the AG mirroring endpoint on Port `5022` and onboard the DB:
 -- Create AG mirroring endpoint with this cert as the authentication mechanism
 CREATE ENDPOINT [Hadr_endpoint]
     STATE = STARTED 
-	AS TCP (LISTENER_IP = ALL, LISTENER_PORT = 5022)
+    AS TCP (LISTENER_IP = ALL, LISTENER_PORT = 5022)
     FOR DATA_MIRRORING (
         ROLE = ALL,
         AUTHENTICATION = CERTIFICATE server_ag_cert,
         ENCRYPTION = REQUIRED ALGORITHM AES
-	);
+    );
 
 -- View database mirroring endpoints on SQL Server
 SELECT
@@ -858,7 +858,7 @@ FOR
 REPLICA ON N'MAPLE-SQL-2019' WITH (ENDPOINT_URL = 'TCP://192.168.3.4:5022',
     FAILOVER_MODE = MANUAL,  
     AVAILABILITY_MODE = SYNCHRONOUS_COMMIT,   
-	PRIMARY_ROLE(ALLOW_CONNECTIONS = ALL),SECONDARY_ROLE(ALLOW_CONNECTIONS = ALL),
+    PRIMARY_ROLE(ALLOW_CONNECTIONS = ALL),SECONDARY_ROLE(ALLOW_CONNECTIONS = ALL),
     BACKUP_PRIORITY = 50,   
     SEEDING_MODE = AUTOMATIC);
 
@@ -892,11 +892,11 @@ CREATE AVAILABILITY GROUP [DAG2019]
    AVAILABILITY GROUP ON  
       'SQL2019-AG1' WITH    
       (   
-		LISTENER_URL = 'TCP://192.168.3.4:5022',    
+        LISTENER_URL = 'TCP://192.168.3.4:5022',    
         AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT,   
         FAILOVER_MODE = MANUAL,   
         SEEDING_MODE = AUTOMATIC
-	  ), 
+      ), 
       'sql-ad-yes-1' WITH    
       (   
          LISTENER_URL = 'TCP://sql-ad-yes-1.fg.contoso.com:5022',   
@@ -1307,8 +1307,8 @@ SELECT name, compatibility_level, recovery_model, recovery_model_desc, state_des
 FROM sys.databases
 WHERE name = 'AdventureWorks2012'
 
--- name						compatibility_level	recovery_model	recovery_model_desc		state_desc
--- AdventureWorks2012		100					1				FULL					ONLINE
+-- name                        compatibility_level    recovery_model    recovery_model_desc        state_desc
+-- AdventureWorks2012        100                    1                FULL                    ONLINE
 
 -- Make a directory under the share named Full
 
@@ -1344,55 +1344,55 @@ We see:
 -- ****** Begin: Script to be run at Primary: [FG-SQL-2012] ******
 
 
-DECLARE @LS_BackupJobId	AS uniqueidentifier 
-DECLARE @LS_PrimaryId	AS uniqueidentifier 
-DECLARE @SP_Add_RetCode	As int 
+DECLARE @LS_BackupJobId    AS uniqueidentifier 
+DECLARE @LS_PrimaryId    AS uniqueidentifier 
+DECLARE @SP_Add_RetCode    As int 
 
 
 EXEC @SP_Add_RetCode = master.dbo.sp_add_log_shipping_primary_database 
-		@database = N'AdventureWorks2012' 
-		,@backup_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
-		,@backup_share = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
-		,@backup_job_name = N'LSBackup_AdventureWorks2012' 
-		,@backup_retention_period = 4320
-		,@backup_compression = 2
-		,@backup_threshold = 60 
-		,@threshold_alert_enabled = 1
-		,@history_retention_period = 5760 
-		,@backup_job_id = @LS_BackupJobId OUTPUT 
-		,@primary_id = @LS_PrimaryId OUTPUT 
-		,@overwrite = 1 
+        @database = N'AdventureWorks2012' 
+        ,@backup_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+        ,@backup_share = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+        ,@backup_job_name = N'LSBackup_AdventureWorks2012' 
+        ,@backup_retention_period = 4320
+        ,@backup_compression = 2
+        ,@backup_threshold = 60 
+        ,@threshold_alert_enabled = 1
+        ,@history_retention_period = 5760 
+        ,@backup_job_id = @LS_BackupJobId OUTPUT 
+        ,@primary_id = @LS_PrimaryId OUTPUT 
+        ,@overwrite = 1 
 
 
 IF (@@ERROR = 0 AND @SP_Add_RetCode = 0) 
 BEGIN 
 
-DECLARE @LS_BackUpScheduleUID	As uniqueidentifier 
-DECLARE @LS_BackUpScheduleID	AS int 
+DECLARE @LS_BackUpScheduleUID    As uniqueidentifier 
+DECLARE @LS_BackUpScheduleID    AS int 
 
 
 EXEC msdb.dbo.sp_add_schedule 
-		@schedule_name =N'LSBackupSchedule_FG-SQL-20121' 
-		,@enabled = 1 
-		,@freq_type = 4 
-		,@freq_interval = 1 
-		,@freq_subday_type = 4 
-		,@freq_subday_interval = 5 
-		,@freq_recurrence_factor = 0 
-		,@active_start_date = 20220221 
-		,@active_end_date = 99991231 
-		,@active_start_time = 0 
-		,@active_end_time = 235900 
-		,@schedule_uid = @LS_BackUpScheduleUID OUTPUT 
-		,@schedule_id = @LS_BackUpScheduleID OUTPUT 
+        @schedule_name =N'LSBackupSchedule_FG-SQL-20121' 
+        ,@enabled = 1 
+        ,@freq_type = 4 
+        ,@freq_interval = 1 
+        ,@freq_subday_type = 4 
+        ,@freq_subday_interval = 5 
+        ,@freq_recurrence_factor = 0 
+        ,@active_start_date = 20220221 
+        ,@active_end_date = 99991231 
+        ,@active_start_time = 0 
+        ,@active_end_time = 235900 
+        ,@schedule_uid = @LS_BackUpScheduleUID OUTPUT 
+        ,@schedule_id = @LS_BackUpScheduleID OUTPUT 
 
 EXEC msdb.dbo.sp_attach_schedule 
-		@job_id = @LS_BackupJobId 
-		,@schedule_id = @LS_BackUpScheduleID  
+        @job_id = @LS_BackupJobId 
+        ,@schedule_id = @LS_BackUpScheduleID  
 
 EXEC msdb.dbo.sp_update_job 
-		@job_id = @LS_BackupJobId 
-		,@enabled = 1 
+        @job_id = @LS_BackupJobId 
+        ,@enabled = 1 
 
 
 END 
@@ -1401,10 +1401,10 @@ END
 EXEC master.dbo.sp_add_log_shipping_alert_job 
 
 EXEC master.dbo.sp_add_log_shipping_primary_secondary 
-		@primary_database = N'AdventureWorks2012' 
-		,@secondary_server = N'MAPLE-SQL-2017.maple.fg.contoso.com' 
-		,@secondary_database = N'AdventureWorks2012' 
-		,@overwrite = 1 
+        @primary_database = N'AdventureWorks2012' 
+        ,@secondary_server = N'MAPLE-SQL-2017.maple.fg.contoso.com' 
+        ,@secondary_database = N'AdventureWorks2012' 
+        ,@overwrite = 1 
 
 -- ****** End: Script to be run at Primary: [FG-SQL-2012]  ******
 
@@ -1428,95 +1428,95 @@ Result:
 -- ****** Begin: Script to be run at Secondary: [MAPLE-SQL-2017.maple.fg.contoso.com] ******
 
 
-DECLARE @LS_Secondary__CopyJobId	AS uniqueidentifier 
-DECLARE @LS_Secondary__RestoreJobId	AS uniqueidentifier 
-DECLARE @LS_Secondary__SecondaryId	AS uniqueidentifier 
-DECLARE @LS_Add_RetCode	As int 
+DECLARE @LS_Secondary__CopyJobId    AS uniqueidentifier 
+DECLARE @LS_Secondary__RestoreJobId    AS uniqueidentifier 
+DECLARE @LS_Secondary__SecondaryId    AS uniqueidentifier 
+DECLARE @LS_Add_RetCode    As int 
 
 
 EXEC @LS_Add_RetCode = master.dbo.sp_add_log_shipping_secondary_primary 
-		@primary_server = N'FG-SQL-2012' 
-		,@primary_database = N'AdventureWorks2012' 
-		,@backup_source_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
-		,@backup_destination_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
-		,@copy_job_name = N'LSCopy_FG-SQL-2012_AdventureWorks2012' 
-		,@restore_job_name = N'LSRestore_FG-SQL-2012_AdventureWorks2012' 
-		,@file_retention_period = 4320 
-		,@overwrite = 1 
-		,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
-		,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
-		,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
+        @primary_server = N'FG-SQL-2012' 
+        ,@primary_database = N'AdventureWorks2012' 
+        ,@backup_source_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+        ,@backup_destination_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingShare\2012' 
+        ,@copy_job_name = N'LSCopy_FG-SQL-2012_AdventureWorks2012' 
+        ,@restore_job_name = N'LSRestore_FG-SQL-2012_AdventureWorks2012' 
+        ,@file_retention_period = 4320 
+        ,@overwrite = 1 
+        ,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
+        ,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
+        ,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
 
 IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
 BEGIN 
 
-DECLARE @LS_SecondaryCopyJobScheduleUID	As uniqueidentifier 
-DECLARE @LS_SecondaryCopyJobScheduleID	AS int 
+DECLARE @LS_SecondaryCopyJobScheduleUID    As uniqueidentifier 
+DECLARE @LS_SecondaryCopyJobScheduleID    AS int 
 
 
 EXEC msdb.dbo.sp_add_schedule 
-		@schedule_name =N'DefaultCopyJobSchedule' 
-		,@enabled = 1 
-		,@freq_type = 4 
-		,@freq_interval = 1 
-		,@freq_subday_type = 4 
-		,@freq_subday_interval = 5 
-		,@freq_recurrence_factor = 0 
-		,@active_start_date = 20220221 
-		,@active_end_date = 99991231 
-		,@active_start_time = 0 
-		,@active_end_time = 235900 
-		,@schedule_uid = @LS_SecondaryCopyJobScheduleUID OUTPUT 
-		,@schedule_id = @LS_SecondaryCopyJobScheduleID OUTPUT 
+        @schedule_name =N'DefaultCopyJobSchedule' 
+        ,@enabled = 1 
+        ,@freq_type = 4 
+        ,@freq_interval = 1 
+        ,@freq_subday_type = 4 
+        ,@freq_subday_interval = 5 
+        ,@freq_recurrence_factor = 0 
+        ,@active_start_date = 20220221 
+        ,@active_end_date = 99991231 
+        ,@active_start_time = 0 
+        ,@active_end_time = 235900 
+        ,@schedule_uid = @LS_SecondaryCopyJobScheduleUID OUTPUT 
+        ,@schedule_id = @LS_SecondaryCopyJobScheduleID OUTPUT 
 
 EXEC msdb.dbo.sp_attach_schedule 
-		@job_id = @LS_Secondary__CopyJobId 
-		,@schedule_id = @LS_SecondaryCopyJobScheduleID  
+        @job_id = @LS_Secondary__CopyJobId 
+        ,@schedule_id = @LS_SecondaryCopyJobScheduleID  
 
-DECLARE @LS_SecondaryRestoreJobScheduleUID	As uniqueidentifier 
-DECLARE @LS_SecondaryRestoreJobScheduleID	AS int 
+DECLARE @LS_SecondaryRestoreJobScheduleUID    As uniqueidentifier 
+DECLARE @LS_SecondaryRestoreJobScheduleID    AS int 
 
 
 EXEC msdb.dbo.sp_add_schedule 
-		@schedule_name =N'DefaultRestoreJobSchedule' 
-		,@enabled = 1 
-		,@freq_type = 4 
-		,@freq_interval = 1 
-		,@freq_subday_type = 4 
-		,@freq_subday_interval = 5 
-		,@freq_recurrence_factor = 0 
-		,@active_start_date = 20220221 
-		,@active_end_date = 99991231 
-		,@active_start_time = 0 
-		,@active_end_time = 235900 
-		,@schedule_uid = @LS_SecondaryRestoreJobScheduleUID OUTPUT 
-		,@schedule_id = @LS_SecondaryRestoreJobScheduleID OUTPUT 
+        @schedule_name =N'DefaultRestoreJobSchedule' 
+        ,@enabled = 1 
+        ,@freq_type = 4 
+        ,@freq_interval = 1 
+        ,@freq_subday_type = 4 
+        ,@freq_subday_interval = 5 
+        ,@freq_recurrence_factor = 0 
+        ,@active_start_date = 20220221 
+        ,@active_end_date = 99991231 
+        ,@active_start_time = 0 
+        ,@active_end_time = 235900 
+        ,@schedule_uid = @LS_SecondaryRestoreJobScheduleUID OUTPUT 
+        ,@schedule_id = @LS_SecondaryRestoreJobScheduleID OUTPUT 
 
 EXEC msdb.dbo.sp_attach_schedule 
-		@job_id = @LS_Secondary__RestoreJobId 
-		,@schedule_id = @LS_SecondaryRestoreJobScheduleID  
+        @job_id = @LS_Secondary__RestoreJobId 
+        ,@schedule_id = @LS_SecondaryRestoreJobScheduleID  
 
 
 END 
 
 
-DECLARE @LS_Add_RetCode2	As int 
+DECLARE @LS_Add_RetCode2    As int 
 
 
 IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
 BEGIN 
 
 EXEC @LS_Add_RetCode2 = master.dbo.sp_add_log_shipping_secondary_database 
-		@secondary_database = N'AdventureWorks2012' 
-		,@primary_server = N'FG-SQL-2012' 
-		,@primary_database = N'AdventureWorks2012' 
-		,@restore_delay = 0 
-		,@restore_mode = 0 
-		,@disconnect_users	= 0 
-		,@restore_threshold = 45   
-		,@threshold_alert_enabled = 1 
-		,@history_retention_period	= 5760 
-		,@overwrite = 1 
+        @secondary_database = N'AdventureWorks2012' 
+        ,@primary_server = N'FG-SQL-2012' 
+        ,@primary_database = N'AdventureWorks2012' 
+        ,@restore_delay = 0 
+        ,@restore_mode = 0 
+        ,@disconnect_users    = 0 
+        ,@restore_threshold = 45   
+        ,@threshold_alert_enabled = 1 
+        ,@history_retention_period    = 5760 
+        ,@overwrite = 1 
 
 END 
 
@@ -1525,12 +1525,12 @@ IF (@@error = 0 AND @LS_Add_RetCode = 0)
 BEGIN 
 
 EXEC msdb.dbo.sp_update_job 
-		@job_id = @LS_Secondary__CopyJobId 
-		,@enabled = 1 
+        @job_id = @LS_Secondary__CopyJobId 
+        ,@enabled = 1 
 
 EXEC msdb.dbo.sp_update_job 
-		@job_id = @LS_Secondary__RestoreJobId 
-		,@enabled = 1 
+        @job_id = @LS_Secondary__RestoreJobId 
+        ,@enabled = 1 
 
 END 
 
@@ -1751,8 +1751,8 @@ SELECT name, compatibility_level, recovery_model, recovery_model_desc, state_des
 FROM sys.databases
 WHERE name = 'LogShipTest'
 
--- name						compatibility_level	recovery_model	recovery_model_desc		state_desc
--- LogShipTest		100					1				FULL					ONLINE
+-- name                        compatibility_level    recovery_model    recovery_model_desc        state_desc
+-- LogShipTest        100                    1                FULL                    ONLINE
 
 -- Make a directory under the share named Full - X:\Full
 -- Backup to share - need to use UNC Path and not mapped drive for SQL Server!
@@ -1894,62 +1894,62 @@ GO
 
 -- ****** Begin: Script to be run at Primary: [FG-SQL-2012] ******
 
-DECLARE @LS_BackupJobId	AS uniqueidentifier 
-DECLARE @LS_PrimaryId	AS uniqueidentifier 
-DECLARE @SP_Add_RetCode	As int 
+DECLARE @LS_BackupJobId    AS uniqueidentifier 
+DECLARE @LS_PrimaryId    AS uniqueidentifier 
+DECLARE @SP_Add_RetCode    As int 
 
 EXEC @SP_Add_RetCode = master.dbo.sp_add_log_shipping_primary_database 
-		@database = N'LogShipTest' 
-		,@backup_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Logs' 
-		,@backup_share = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Logs' 
-		,@backup_job_name = N'LSBackup_LogShipTest' 
-		,@backup_retention_period = 4320
-		,@backup_compression = 2
-		,@backup_threshold = 60 
-		,@threshold_alert_enabled = 1
-		,@history_retention_period = 5760 
-		,@backup_job_id = @LS_BackupJobId OUTPUT 
-		,@primary_id = @LS_PrimaryId OUTPUT 
-		,@overwrite = 1 
+        @database = N'LogShipTest' 
+        ,@backup_directory = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Logs' 
+        ,@backup_share = N'\\MAPLE-DC-1-vm.maple.fg.contoso.com\LogShippingNFS\Logs' 
+        ,@backup_job_name = N'LSBackup_LogShipTest' 
+        ,@backup_retention_period = 4320
+        ,@backup_compression = 2
+        ,@backup_threshold = 60 
+        ,@threshold_alert_enabled = 1
+        ,@history_retention_period = 5760 
+        ,@backup_job_id = @LS_BackupJobId OUTPUT 
+        ,@primary_id = @LS_PrimaryId OUTPUT 
+        ,@overwrite = 1 
 
 IF (@@ERROR = 0 AND @SP_Add_RetCode = 0) 
 BEGIN 
 
-DECLARE @LS_BackUpScheduleUID	As uniqueidentifier 
-DECLARE @LS_BackUpScheduleID	AS int 
+DECLARE @LS_BackUpScheduleUID    As uniqueidentifier 
+DECLARE @LS_BackUpScheduleID    AS int 
 
 EXEC msdb.dbo.sp_add_schedule 
-		@schedule_name =N'LSBackupSchedule_FG-SQL-2012' 
-		,@enabled = 1 
-		,@freq_type = 4 
-		,@freq_interval = 1 
-		,@freq_subday_type = 4 
-		,@freq_subday_interval = 5 
-		,@freq_recurrence_factor = 0 
-		,@active_start_date = 20220221 
-		,@active_end_date = 99991231 
-		,@active_start_time = 0 
-		,@active_end_time = 235900 
-		,@schedule_uid = @LS_BackUpScheduleUID OUTPUT 
-		,@schedule_id = @LS_BackUpScheduleID OUTPUT 
+        @schedule_name =N'LSBackupSchedule_FG-SQL-2012' 
+        ,@enabled = 1 
+        ,@freq_type = 4 
+        ,@freq_interval = 1 
+        ,@freq_subday_type = 4 
+        ,@freq_subday_interval = 5 
+        ,@freq_recurrence_factor = 0 
+        ,@active_start_date = 20220221 
+        ,@active_end_date = 99991231 
+        ,@active_start_time = 0 
+        ,@active_end_time = 235900 
+        ,@schedule_uid = @LS_BackUpScheduleUID OUTPUT 
+        ,@schedule_id = @LS_BackUpScheduleID OUTPUT 
 
 EXEC msdb.dbo.sp_attach_schedule 
-		@job_id = @LS_BackupJobId 
-		,@schedule_id = @LS_BackUpScheduleID  
+        @job_id = @LS_BackupJobId 
+        ,@schedule_id = @LS_BackUpScheduleID  
 
 EXEC msdb.dbo.sp_update_job 
-		@job_id = @LS_BackupJobId 
-		,@enabled = 1 
+        @job_id = @LS_BackupJobId 
+        ,@enabled = 1 
 
 END 
 
 EXEC master.dbo.sp_add_log_shipping_alert_job 
 
 EXEC master.dbo.sp_add_log_shipping_primary_secondary 
-		@primary_database = N'LogShipTest' 
-		,@secondary_server = N'sql-ad-no-1-pod.fg.contoso.com,1533' 
-		,@secondary_database = N'LogShipTest' 
-		,@overwrite = 1 
+        @primary_database = N'LogShipTest' 
+        ,@secondary_server = N'sql-ad-no-1-pod.fg.contoso.com,1533' 
+        ,@secondary_database = N'LogShipTest' 
+        ,@overwrite = 1 
 
 -- ****** End: Script to be run at Primary: [FG-SQL-2012]  ******
 ```
@@ -1997,89 +1997,89 @@ Bottom has only one Full Backup, top has many Log backups
 
 -- ****** Begin: Script to be run at Secondary: [sql-ad-no-1-pod.fg.contoso.com,1533] ******
 
-DECLARE @LS_Secondary__CopyJobId	AS uniqueidentifier 
-DECLARE @LS_Secondary__RestoreJobId	AS uniqueidentifier 
-DECLARE @LS_Secondary__SecondaryId	AS uniqueidentifier 
-DECLARE @LS_Add_RetCode	As int 
+DECLARE @LS_Secondary__CopyJobId    AS uniqueidentifier 
+DECLARE @LS_Secondary__RestoreJobId    AS uniqueidentifier 
+DECLARE @LS_Secondary__SecondaryId    AS uniqueidentifier 
+DECLARE @LS_Add_RetCode    As int 
 
 EXEC @LS_Add_RetCode = master.dbo.sp_add_log_shipping_secondary_primary 
-		@primary_server = N'FG-SQL-2012.fg.contoso.com' 
-		,@primary_database = N'LogShipTest' 
-		,@backup_source_directory = N'/var/nfs/logs' 
-		,@backup_destination_directory = N'/var/nfs/logs' 
-		,@copy_job_name = N'LSCopy_FG-SQL-2012_LogShipTest' 
-		,@restore_job_name = N'LSRestore_FG-SQL-2012_LogShipTest' 
-		,@file_retention_period = 4320 
-		,@overwrite = 1 
-		,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
-		,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
-		,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
+        @primary_server = N'FG-SQL-2012.fg.contoso.com' 
+        ,@primary_database = N'LogShipTest' 
+        ,@backup_source_directory = N'/var/nfs/logs' 
+        ,@backup_destination_directory = N'/var/nfs/logs' 
+        ,@copy_job_name = N'LSCopy_FG-SQL-2012_LogShipTest' 
+        ,@restore_job_name = N'LSRestore_FG-SQL-2012_LogShipTest' 
+        ,@file_retention_period = 4320 
+        ,@overwrite = 1 
+        ,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
+        ,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
+        ,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
 
 IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
 BEGIN 
 
-DECLARE @LS_SecondaryCopyJobScheduleUID	As uniqueidentifier 
-DECLARE @LS_SecondaryCopyJobScheduleID	AS int 
+DECLARE @LS_SecondaryCopyJobScheduleUID    As uniqueidentifier 
+DECLARE @LS_SecondaryCopyJobScheduleID    AS int 
 
 EXEC msdb.dbo.sp_add_schedule 
-		@schedule_name =N'DefaultCopyJobSchedule' 
-		,@enabled = 1 
-		,@freq_type = 4 
-		,@freq_interval = 1 
-		,@freq_subday_type = 4 
-		,@freq_subday_interval = 5 
-		,@freq_recurrence_factor = 0 
-		,@active_start_date = 20220221 
-		,@active_end_date = 99991231 
-		,@active_start_time = 0 
-		,@active_end_time = 235900 
-		,@schedule_uid = @LS_SecondaryCopyJobScheduleUID OUTPUT 
-		,@schedule_id = @LS_SecondaryCopyJobScheduleID OUTPUT 
+        @schedule_name =N'DefaultCopyJobSchedule' 
+        ,@enabled = 1 
+        ,@freq_type = 4 
+        ,@freq_interval = 1 
+        ,@freq_subday_type = 4 
+        ,@freq_subday_interval = 5 
+        ,@freq_recurrence_factor = 0 
+        ,@active_start_date = 20220221 
+        ,@active_end_date = 99991231 
+        ,@active_start_time = 0 
+        ,@active_end_time = 235900 
+        ,@schedule_uid = @LS_SecondaryCopyJobScheduleUID OUTPUT 
+        ,@schedule_id = @LS_SecondaryCopyJobScheduleID OUTPUT 
 
 EXEC msdb.dbo.sp_attach_schedule 
-		@job_id = @LS_Secondary__CopyJobId 
-		,@schedule_id = @LS_SecondaryCopyJobScheduleID  
+        @job_id = @LS_Secondary__CopyJobId 
+        ,@schedule_id = @LS_SecondaryCopyJobScheduleID  
 
-DECLARE @LS_SecondaryRestoreJobScheduleUID	As uniqueidentifier 
-DECLARE @LS_SecondaryRestoreJobScheduleID	AS int 
+DECLARE @LS_SecondaryRestoreJobScheduleUID    As uniqueidentifier 
+DECLARE @LS_SecondaryRestoreJobScheduleID    AS int 
 
 EXEC msdb.dbo.sp_add_schedule 
-		@schedule_name =N'DefaultRestoreJobSchedule' 
-		,@enabled = 1 
-		,@freq_type = 4 
-		,@freq_interval = 1 
-		,@freq_subday_type = 4 
-		,@freq_subday_interval = 5 
-		,@freq_recurrence_factor = 0 
-		,@active_start_date = 20220221 
-		,@active_end_date = 99991231 
-		,@active_start_time = 0 
-		,@active_end_time = 235900 
-		,@schedule_uid = @LS_SecondaryRestoreJobScheduleUID OUTPUT 
-		,@schedule_id = @LS_SecondaryRestoreJobScheduleID OUTPUT 
+        @schedule_name =N'DefaultRestoreJobSchedule' 
+        ,@enabled = 1 
+        ,@freq_type = 4 
+        ,@freq_interval = 1 
+        ,@freq_subday_type = 4 
+        ,@freq_subday_interval = 5 
+        ,@freq_recurrence_factor = 0 
+        ,@active_start_date = 20220221 
+        ,@active_end_date = 99991231 
+        ,@active_start_time = 0 
+        ,@active_end_time = 235900 
+        ,@schedule_uid = @LS_SecondaryRestoreJobScheduleUID OUTPUT 
+        ,@schedule_id = @LS_SecondaryRestoreJobScheduleID OUTPUT 
 
 EXEC msdb.dbo.sp_attach_schedule 
-		@job_id = @LS_Secondary__RestoreJobId 
-		,@schedule_id = @LS_SecondaryRestoreJobScheduleID  
+        @job_id = @LS_Secondary__RestoreJobId 
+        ,@schedule_id = @LS_SecondaryRestoreJobScheduleID  
 
 END 
 
-DECLARE @LS_Add_RetCode2	As int 
+DECLARE @LS_Add_RetCode2    As int 
 
 IF (@@ERROR = 0 AND @LS_Add_RetCode = 0) 
 BEGIN 
 
 EXEC @LS_Add_RetCode2 = master.dbo.sp_add_log_shipping_secondary_database 
-		@secondary_database = N'LogShipTest' 
-		,@primary_server = N'FG-SQL-2012.fg.contoso.com' 
-		,@primary_database = N'LogShipTest' 
-		,@restore_delay = 0 
-		,@restore_mode = 0 
-		,@disconnect_users	= 0 
-		,@restore_threshold = 45   
-		,@threshold_alert_enabled = 1 
-		,@history_retention_period	= 5760 
-		,@overwrite = 1 
+        @secondary_database = N'LogShipTest' 
+        ,@primary_server = N'FG-SQL-2012.fg.contoso.com' 
+        ,@primary_database = N'LogShipTest' 
+        ,@restore_delay = 0 
+        ,@restore_mode = 0 
+        ,@disconnect_users    = 0 
+        ,@restore_threshold = 45   
+        ,@threshold_alert_enabled = 1 
+        ,@history_retention_period    = 5760 
+        ,@overwrite = 1 
 
 END 
 
@@ -2087,12 +2087,12 @@ IF (@@error = 0 AND @LS_Add_RetCode = 0)
 BEGIN 
 
 EXEC msdb.dbo.sp_update_job 
-		@job_id = @LS_Secondary__CopyJobId 
-		,@enabled = 1 
+        @job_id = @LS_Secondary__CopyJobId 
+        ,@enabled = 1 
 
 EXEC msdb.dbo.sp_update_job 
-		@job_id = @LS_Secondary__RestoreJobId 
-		,@enabled = 1 
+        @job_id = @LS_Secondary__RestoreJobId 
+        ,@enabled = 1 
 
 END 
 
@@ -2299,10 +2299,37 @@ BC
 # Active Directory + Failover Group Testing
 
 `TO-DOs`:
-1. Create same AD Account and Keytab for both MIs, shove in SPNs for FoG, MI-1 and MI-2 in there
 
+**Initial AD Setup**
+1. Deploy 2 Data Controllers - Primary, Secondary - ✅
+2. Create same AD Account and Keytab for both MIs, create SPNs for FoG listener (`gpm0mi00`), MI-1 (`gpm0mi01`) and MI-2 (`gpm0mi02`) in there - ✅
+3. Deployed SQL MI `gpm0mi01.fg.contoso.com` on Controller 1 (Primary) - ✅
+4. Deployed SQL MI `gpm0mi02.fg.contoso.com` on Controller 2 (DR) - ✅
+5. Created DNS CNAME (Alias) record to point `gpm0mi00.fg.contoso.com` to `gpm0mi01.fg.contoso.com` initially - ✅
+6. Verify AD User authenticate against `gpm0mi00.fg.contoso.com` via SSO - ✅
+7. Modified DNS record `gpm0mi00.fg.contoso.com` to now point to `gpm0mi02.fg.contoso.com` - ✅
+8. Verify AD User authenticate against `gpm0mi00.fg.contoso.com` via SSO  - ✅
+
+**FoG Testing - setup**
+
+9. Setup FoG with `gpm0mi01` being the Primary - write some data in there - ✅
+ > We will not be able to connect to Secondary anymore - as per design
+10. Ensure AD User can read the data against `gpm0mi00` - ✅
+
+**FoG Failover - Primary > Secondary**
+
+11. Failover the FoG via CRD patch - ✅
+12. Modified DNS record `gpm0mi00.fg.contoso.com` to now point to `gpm0mi02.fg.contoso.com` - ✅
+13. Ensure AD User can read the data against `gpm0mi00` as usual - write some data in there - ✅
+
+**FoG Failover - Secondary > Primary**
+
+14. Failover the FoG via CRD patch - ✅
+15. Modified DNS record `gpm0mi00.fg.contoso.com` to now point to `gpm0mi01.fg.contoso.com` - ✅
+16. Ensure AD User has that write they performed over at the Secondary in Step 13 - ✅
 
 ## Infrastructure Deployment
+
 The following script deploys the AD environment with Terraform:
 ```bash
 # ---------------------
@@ -2339,6 +2366,849 @@ rm -rf .terraform
 rm .terraform.lock.hcl
 rm terraform.tfstate 
 rm terraform.tfstate.backup
-
 ```
-Follow [DC Creation Post Deployment Steps above](#post-deployment-windows-vms)
+
+## Post Deployment Windows stuff
+
+* Follow [DC Creation Post Deployment Steps above](#post-deployment-windows-vms)
+
+* Install the following software:
+
+```powershell
+# Turn off firewall
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+
+# Install chocolatey
+iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+
+# Install apps
+$chocolateyAppList = 'grep,ssms,microsoft-edge'
+
+$appsToInstall = $chocolateyAppList -split "," | foreach { "$($_.Trim())" }
+
+foreach ($app in $appsToInstall)
+{
+    Write-Host "Installing $app"
+    & choco install $app /y -Force| Write-Output
+}
+```
+
+## Deploy 2 Data Controllers - Primary, Secondary
+
+```bash
+cd /workspaces/sql-miaa-migrations/kubernetes-dr
+
+# Deployment variables
+export adminUsername='admin'
+export AZDATA_USERNAME='admin'
+export AZDATA_PASSWORD='acntorPRESTO!'
+export arcDcName='arc-dc'
+export azureLocation='eastus'
+export clusterName='aks-cni'
+export AZDATA_LOGSUI_USERNAME=$AZDATA_USERNAME
+export AZDATA_METRICSUI_USERNAME=$AZDATA_USERNAME
+export AZDATA_LOGSUI_PASSWORD=$AZDATA_PASSWORD
+export AZDATA_METRICSUI_PASSWORD=$AZDATA_PASSWORD
+
+# Login as service principal
+az login --service-principal --username $spnClientId --password $spnClientSecret --tenant $spnTenantId
+az account set --subscription $subscriptionId
+
+# Adding Azure Arc CLI extensions
+az config set extension.use_dynamic_aafainstall=yes_without_prompt
+
+# Getting AKS cluster credentials kubeconfig file
+az aks get-credentials --resource-group $resourceGroup --name $clusterName --admin
+
+kubectl get nodes
+
+#########################################
+# Create data controller in indirect mode
+#########################################
+export ns='arc-primary'
+#export ns='arc-dr'
+
+# Create with the AKS profile
+az arcdata dc create --profile-name azure-arc-aks-premium-storage \
+                     --k8s-namespace $ns \
+                     --name $arcDcName \
+                     --subscription $subscriptionId \
+                     --resource-group $resourceGroup \
+                     --location $azureLocation \
+                     --connectivity-mode indirect \
+                     --use-k8s
+
+# Monitor Data Controller
+watch -n 20 kubectl get datacontroller -n $ns
+
+# Monitor pods
+watch -n 10 kubectl get pods -n $ns
+```
+
+## Create same AD Account and Keytab for both MIs
+
+### Active Directory pre-reqs
+```powershell
+Import-Module ActiveDirectory
+#######################################
+# 1. Create an AD Account for our sqlmi
+#######################################
+# Create OU - not an Arc requirement but nice to show since everyone uses it
+# Arc SQL MI Users can be in any OU
+New-ADOrganizationalUnit -Name "ArcSQLMI" -Path "DC=FG,DC=CONTOSO,DC=COM"
+
+$pass = "acntorPRESTO!" | ConvertTo-SecureString -AsPlainText -Force
+New-ADUser -Name "gpm0mi00-account" `
+           -UserPrincipalName "gpm0mi00-account@fg.contoso.com" `
+           -Path "OU=ArcSQLMI,DC=FG,DC=CONTOSO,DC=COM" `
+           -AccountPassword $pass `
+           -Enabled $true `
+           -ChangePasswordAtLogon $false `
+           -PasswordNeverExpires $true
+
+# "-PasswordNeverExpires "Since we don't want to deal with Keytab rotations for this demo, in PROD we don't need this
+
+################
+# 2. Create SPNs
+################
+# FoG Listener
+setspn -S MSSQLSvc/gpm0mi00.fg.contoso.com gpm0mi00-account
+setspn -S MSSQLSvc/gpm0mi00.fg.contoso.com:31433 gpm0mi00-account
+
+# Primary
+setspn -S MSSQLSvc/gpm0mi01.fg.contoso.com gpm0mi00-account
+setspn -S MSSQLSvc/gpm0mi01.fg.contoso.com:31433 gpm0mi00-account
+
+# Secondary
+setspn -S MSSQLSvc/gpm0mi02.fg.contoso.com gpm0mi00-account
+setspn -S MSSQLSvc/gpm0mi02.fg.contoso.com:31433 gpm0mi00-account
+
+# Verify SPNs got created
+$search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+$search.filter = "(servicePrincipalName=*)"
+
+## You can use this to filter for OU's:
+## $results = $search.Findall() | ?{ $_.path -like '*OU=whatever,DC=whatever,DC=whatever*' }
+$results = $search.Findall()
+
+foreach( $result in $results ) {
+    $userEntry = $result.GetDirectoryEntry()
+    Write-host "Object Name    =    "    $userEntry.name -backgroundcolor "yellow" -foregroundcolor "black"
+    Write-host "DN    =    "    $userEntry.distinguishedName
+    Write-host "Object Cat.    =    " $userEntry.objectCategory
+    Write-host "servicePrincipalNames"
+
+    $i=1
+    foreach( $SPN in $userEntry.servicePrincipalName ) {
+        Write-host "SPN ${i} =$SPN"
+        $i+=1
+    }
+    Write-host ""
+}
+
+##########################################################################################
+#                                      RUN ON FG-DC-1
+##########################################################################################
+# 3. Reverse Lookup Zone - Pointer - FG
+#############################################
+# Add a reverse lookup zone - FG Subnet
+Add-DnsServerPrimaryZone -NetworkId "192.168.0.0/24" -ReplicationScope Domain
+
+# Get reverse zone name
+$Zones = @(Get-DnsServerZone)
+ForEach ($Zone in $Zones) {
+    if ((-not $($Zone.IsAutoCreated)) -and ($Zone.IsReverseLookupZone) -and ($Zone.ZoneName.Split(".")[0] -eq "0")) {
+       $Reverse = $Zone.ZoneName
+    }
+}
+
+# Add a PTR record to the Reverse Lookup Zone for the Domain Controller. This is needed for when the SQL MI Pod looks up the DC in reverse.
+Add-DNSServerResourceRecordPTR -ZoneName $Reverse -Name 4 -PTRDomainName FG-DC-1-vm.fg.contoso.com # 4 is because of the IP address of the DC
+```
+
+### Keytab creation: Primary, Secondary
+
+```bash
+##################################
+# Keytab generation Job deployment
+##################################
+# Create secret with AD Password
+kubectl create secret generic keytab-password --from-literal=password=acntorPRESTO! -n $ns
+
+# Kubernetes Service Account for Job to create secrets
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keytab-job
+  namespace: $ns
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: keytab-job
+  namespace: $ns
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keytab-job
+  namespace: $ns
+subjects:
+  - kind: ServiceAccount
+    name: keytab-job
+roleRef:
+  kind: ClusterRole
+  name: keytab-job
+  apiGroup: rbac.authorization.k8s.io
+EOF
+
+# Kubernetes Job Deployment for Keytab creation
+cat <<EOF | kubectl create -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-keytab-secret-generator
+  namespace: $ns
+spec:
+  template:
+    metadata:
+      labels:
+        name: kube-keytab-secret-generator
+        app: kube-keytab-secret-generator
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kube-keytab-secret-generator
+        image: djrsystems/kube-keytab-secret-generator:latest
+        env:
+        - name: SECRET_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keytab-password
+              key: password
+        - name: ACCOUNT
+          value: "gpm0mi00-account"
+        - name: ENCRYPTION_METHODS
+          value: "aes256-cts-hmac-sha1-96,arcfour-hmac"
+        - name: REALM
+          value: "FG.CONTOSO.COM"
+        - name: SECRET_NAME
+          value: "gpm0mi00-keytab-secret"
+        - name: SPNS
+          value: "MSSQLSvc/gpm0mi00.fg.contoso.com,MSSQLSvc/gpm0mi00.fg.contoso.com:31433,MSSQLSvc/gpm0mi01.fg.contoso.com,MSSQLSvc/gpm0mi01.fg.contoso.com:31433,MSSQLSvc/gpm0mi02.fg.contoso.com,MSSQLSvc/gpm0mi02.fg.contoso.com:31433"
+      serviceAccountName: keytab-job
+      automountServiceAccountToken: true
+EOF
+
+# View keytab secret
+kubectl get secret gpm0mi00-keytab-secret -n $ns -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'
+```
+
+## Deploy SQL MI `gpm0mi01` Primary and `gpm0mi02` DR
+
+```bash
+######################################
+# Active Directory + SQL MI deployment
+######################################
+# Deploy Active Directory Connector
+cat <<EOF | kubectl create -f -
+apiVersion: arcdata.microsoft.com/v1beta2
+kind: ActiveDirectoryConnector
+metadata:
+  name: adarc
+  namespace: $ns
+spec:
+  activeDirectory:
+    realm: FG.CONTOSO.COM # Name of the Active Directory domain in uppercase. This is the AD domain that this instance of AD Connector will be associated with.
+    netbiosDomainName: FG # This is often used to qualify accounts in the AD domain. e.g. if the accounts in the domain are referred to as FG\admin, then FG is the NETBIOS domain name.
+    domainControllers:
+      primaryDomainController:
+        hostname: FG-DC-1-vm.fg.contoso.com # Our domain controller
+  dns:
+    preferK8sDnsForPtrLookups: false
+    nameserverIPAddresses:
+      - 192.168.0.4 # IP Address of DNS nameserver, which is just domain controller in this demo env
+EOF
+
+# Deploy MI
+export mi='gpm0mi01'
+#export mi='gpm0mi02'
+
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+data:
+  password: YWNudG9yUFJFU1RPIQ==
+  username: Ym9vcg==
+kind: Secret
+metadata:
+  name: $mi-login-secret
+  namespace: $ns
+type: Opaque
+---
+apiVersion: sql.arcdata.microsoft.com/v5
+kind: SqlManagedInstance
+metadata:
+  name: $mi
+  namespace: $ns
+spec:
+  backup:
+    retentionPeriodInDays: 7
+  dev: true
+  tier: GeneralPurpose
+  forceHA: "true"
+  licenseType: LicenseIncluded
+  replicas: 1
+  scheduling:
+    default:
+      resources:
+        limits:
+          cpu: "1"
+          memory: 2Gi
+        requests:
+          cpu: "1"
+          memory: 2Gi
+  security:
+    adminLoginSecret: $mi-login-secret
+    activeDirectory:
+      connector:
+        name: adarc
+        namespace: $ns
+      accountName: gpm0mi00-account
+      keytabSecret: gpm0mi00-keytab-secret
+  services:
+    primary:
+      type: LoadBalancer
+      dnsName: $mi.fg.contoso.com
+      port: 31433
+  storage:
+    backups:
+      volumes:
+        - className: azurefile
+          size: 5Gi
+    data:
+      volumes:
+        - className: managed-premium
+          size: 5Gi
+    datalogs:
+      volumes:
+        - className: managed-premium
+          size: 5Gi
+    logs:
+      volumes:
+        - className: managed-premium
+          size: 5Gi
+EOF
+```
+
+### Create DNS records in Windows DNS
+And we create a DNS record in FG-DC-1 with the Load Balancer's IP:
+```powershell
+Add-DnsServerResourceRecordA -Name gpm0mi01 -ZoneName fg.contoso.com -IPv4Address 20.102.10.214
+Add-DnsServerResourceRecordA -Name gpm0mi02 -ZoneName fg.contoso.com -IPv4Address 52.226.194.221
+Add-DnsServerResourceRecordCName -Name "gpm0mi00" -HostNameAlias "gpm0mi01.fg.contoso.com" -ZoneName fg.contoso.com -TimeToLive 00:05:00
+```
+![DNS entries](_images/ad-dns-entry.png)
+
+### Create Windows logins via SQL Auth account
+
+Repeat on both MIs:
+* `gpm0mi01.fg.contoso.com,31433`
+* `gpm0mi02.fg.contoso.com,31433`
+
+```sql
+USE [master]
+GO
+-- Create login for FG
+CREATE LOGIN [FG\boor] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [FG\boor]
+GO
+```
+And we can login to both and the CNAME via SSO as `FG\boor`:
+
+![Connect via DNS](_images/ad-dns-connect.png)
+
+### Modify CNAME in DNS and verify switch
+
+For Windows DNS there is no `Update` - `Add` updates in place:
+```powershell
+Add-DnsServerResourceRecordCName -Name "gpm0mi00" -HostNameAlias "gpm0mi02.fg.contoso.com" -ZoneName fg.contoso.com -TimeToLive 00:05:00
+ipconfig /flushdns
+nslookup gpm0mi00.fg.contoso.com
+```
+
+> We need to reopen SSMS - for some reason it caches DNS entries that aren't overwritten via `ipconfig /flushdns`
+
+![Repoint via DNS](_images/ad-dns-repoint.png)
+
+## Setup FoG - Azure CLI
+
+> We first do this via Azure CLI so we can figure out what to do in the Kube-Native manner
+
+### Pull out Mirroring Certs
+```bash
+cd /workspaces/sql-miaa-migrations/kubernetes-dr
+mkdir -p sqlcerts/az_cli
+cd /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/az_cli
+
+export mi=gpm0mi01
+export ns=arc-primary
+# export mi=gpm0mi02
+# export ns=arc-dr
+az sql mi-arc get-mirroring-cert --name $mi --cert-file /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/az_cli/$mi.pem​ --k8s-namespace $ns --use-k8s
+```
+
+Figuring out the Kube-native steps:
+> https://github.com/mdrakiburrahman/az_cli_arcdata_whl_dump/blob/3071cada6a268e87e83b06bd38b07453471491d1/azext_arcdata/sqlmi/custom.py#L1130)
+```bash
+mkdir -p /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/kube_native
+cd /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/kube_native
+
+export mi=gpm0mi01
+export ns=arc-primary
+# export mi=gpm0mi02
+# export ns=arc-dr
+kubectl get sqlmi $mi -n $ns --template={{.status.highAvailability.mirroringCertificate}} > /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/kube_native/$mi.pem​
+```
+### Create FoG
+> These are the TSQL steps: https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/configure-distributed-availability-groups?view=sql-server-ver15&tabs=automatic#failover
+
+```bash
+export fog_name=gpm0mi00
+export primary_mi=gpm0mi01
+export primary_ns=arc-primary
+export primary_url=20.102.10.214
+export dr_mi=gpm0mi02
+export dr_ns=arc-dr
+export dr_url=52.226.194.221
+
+# Primary -> Secondary
+az sql instance-failover-group-arc create --shared-name $fog_name --name $fog_name --mi $primary_mi --role primary --partner-mi $dr_mi --partner-mirroring-url tcp://$dr_url:5022 --partner-mirroring-cert-file /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/az_cli/$dr_mi.pem​ --k8s-namespace $primary_ns --use-k8s
+# ...
+# gpm0mi00 is Ready
+
+# Secondary -> Primary
+az sql instance-failover-group-arc create --shared-name $fog_name --name $fog_name --mi $dr_mi --role secondary --partner-mi $primary_mi --partner-mirroring-url tcp://$primary_url:5022 --partner-mirroring-cert-file /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/az_cli/$primary_mi.pem​ --k8s-namespace $dr_ns --use-k8s
+# ...
+# gpm0mi00 is Ready
+```
+
+Write some data via the CNAME endpoint `gpm0mi00.fg.contoso.com,31433`:
+```sql
+-- Create new Database on sql1
+CREATE DATABASE fogtest01
+GO
+
+USE fogtest01
+GO
+
+CREATE TABLE table1 (ID int, value nvarchar(10))
+GO
+
+INSERT INTO table1 VALUES (1, 'demo1')
+INSERT INTO table1 VALUES (2, 'demo4')
+INSERT INTO table1 VALUES (3, 'demo3')
+INSERT INTO table1 VALUES (4, 'demo4')
+
+SELECT * FROM table1
+```
+
+![Perform writes](_images/fog-1.png)
+
+Try reading from Secondary `gpm0mi02.fg.contoso.com,31433`:
+```sql
+USE fogtest01
+GO
+
+SELECT * FROM table1
+
+-- The target database, 'fogtest01', is participating in an availability group and is currently not accessible for queries. Either data movement is suspended or the availability replica is not enabled for read access. To allow read-only access to this and other databases in the availability group, enable read access to one or more secondary availability replicas in the group.  For more information, see the ALTER AVAILABILITY GROUP statement in SQL Server Books Online.
+```
+![Attempt to read](_images/fog-2.png)
+
+Figuring out the Kube-native steps:
+> https://github.com/mdrakiburrahman/az_cli_arcdata_whl_dump/blob/3071cada6a268e87e83b06bd38b07453471491d1/azext_arcdata/sqlmi/custom.py#L1369
+
+Let's look at a dump of the 2 FoG CRs:
+```bash
+mkdir -p /workspaces/sql-miaa-migrations/kubernetes-dr/fogs/kube_native
+cd /workspaces/sql-miaa-migrations/kubernetes-dr/fogs/kube_native
+
+kubectl get fog $fog_name -n $primary_ns -o=yaml > primary_cr.yaml
+kubectl get fog $fog_name -n $dr_ns -o=yaml > dr_cr.yaml
+```
+
+```yaml
+# primary_cr.yaml
+apiVersion: sql.arcdata.microsoft.com/v1beta2
+kind: FailoverGroup
+metadata:
+  creationTimestamp: "2022-05-07T22:28:55Z"
+  generation: 1
+  name: gpm0mi00
+  namespace: arc-primary
+  ownerReferences:
+  - apiVersion: sql.arcdata.microsoft.com/v5
+    kind: SqlManagedInstance
+    name: gpm0mi01
+    uid: 50783d00-17b9-4070-9de0-97747fc141a0
+  resourceVersion: "69277"
+  uid: 26cc4625-28ed-49ee-96e9-9e1facec0c11
+spec:
+  partnerMI: gpm0mi02
+  partnerMirroringCert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIDRzCCAi+gAwIBAgIINJ/q5WBHagQwDQYJKoZIhvcNAQELBQAwKDEmMCQGA1UEAxMdQ2x1c3Rl
+    ciBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkwHhcNMjIwNTA3MjAzMTQ4WhcNMjcwNTA2MjAzMTQ4WjAO
+    MQwwCgYDVQQDEwNkYm0wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDMSZueho1kovoH
+    DegbgMPK3MMl6uXALDrHhWb1pmkQxg87MvtHjEKoh/hnYnyLlhunLdT4EJoxtIVVZd50QnOGcGEM
+    noxck2AEikP9WDkzygCTNDXerMYZkwyJk96u6qLzm+xX2i74I0RCKEHbBxt6Oh5WMyCIVnNJASix
+    Vt3PaPOvAfs5Tzw5yDwMimhqnnpT2SaqXIZjUgbLN5krD5fNOmsaPAuvj0rP/kSycjbQ6YSOXke6
+    BJo/ZfXyc1JoG5iu0JrLIbhsI3fY5E5sl32TzgLgUIRUknHkz2UXcYMQgEqW8hC00ISJGjLDuB37
+    zkUd8/cMWHcsThjwquSsgf5dAgMBAAGjgY4wgYswIAYDVR0lAQH/BBYwFAYIKwYBBQUHAwIGCCsG
+    AQUFBwMBMA4GA1UdDwEB/wQEAwIFoDBXBgNVHREEUDBOggxncG0wbWkwMi1zdmOCJWdwbTBtaTAy
+    LXN2Yy5hcmMtZHIuc3ZjLmNsdXN0ZXIubG9jYWyCF2dwbTBtaTAyLXN2Yy5hcmMtZHIuc3ZjMA0G
+    CSqGSIb3DQEBCwUAA4IBAQAC3yfEM7VZKXbk6SImPtXXDxKfuwHhYw2h0wYoSyl6ERRnx7M8tv5r
+    QKe7zLgd244ZIEypvrDRgmLnYElFnPexuApWOcbvQOu75FWTIgAzecF6FuCmLoxY5UBVVG+VxrfW
+    /WwymD0o/tC2tEeLzWA2pd6DMNJ5N8tekujXbVhmEucknK1uHCtkBD2uMWKlrZbYT57wDgcjQLc5
+    9JX5rXZUGjWD1W8d4MEb25t3haB182K4BcVqJqce9xW+fyT+xcTxAR8s0XGZUJgogS0iIJZffi62
+    wKgdAWI/Rkp4v+kVD66vUvVHcZ87s+Nq8BUHNkcl/AUymUSnlltVjfomhZku
+    -----END CERTIFICATE-----
+  partnerMirroringURL: tcp://52.226.194.221:5022
+  role: primary
+  sharedName: gpm0mi00
+  sourceMI: gpm0mi01
+status:
+  lastUpdateTime: "2022-05-07T22:28:55.842127Z"
+  results: ""
+  role: Primary
+  state: Succeeded
+---
+# dr_cr.yaml
+apiVersion: sql.arcdata.microsoft.com/v1beta2
+kind: FailoverGroup
+metadata:
+  creationTimestamp: "2022-05-07T22:29:03Z"
+  generation: 1
+  name: gpm0mi00
+  namespace: arc-dr
+  ownerReferences:
+  - apiVersion: sql.arcdata.microsoft.com/v5
+    kind: SqlManagedInstance
+    name: gpm0mi02
+    uid: 2cbd639b-ab1a-4816-80d8-23cccdedf070
+  resourceVersion: "69311"
+  uid: ba56afdd-8d0a-4b6e-b42f-1462cfe9623c
+spec:
+  partnerMI: gpm0mi01
+  partnerMirroringCert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIDUjCCAjqgAwIBAgIJAPhXOyoNABiIMA0GCSqGSIb3DQEBCwUAMCgxJjAkBgNVBAMTHUNsdXN0
+    ZXIgQ2VydGlmaWNhdGUgQXV0aG9yaXR5MB4XDTIyMDUwNzIwMjAxN1oXDTI3MDUwNjIwMjAxN1ow
+    DjEMMAoGA1UEAxMDZGJtMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuJ3slrDXHvFk
+    H6FyzfqNBuQZIPdz8o4+/CoGDyKg1P9rGd5t7KptwmUMK6F4IxZ3ox93MzXb2CPOQRNAUdNnhFmM
+    JlSt86cfebBZ4rKmkOTJfCLUBJJikin3nS6+kqnEU5n37w9SQyW0HKBFIR2rytqtBKyDdFJ7J4FI
+    AGOT7ItnyHHP9r+ANrXlp0Sx3N9X24HvqTXkzJWGRdD7s894emM39m5PhOYE2Cb3wcICosXuoY6E
+    BWdi5J9DPgy3ek50OMuGZkUsmnZ8L2Xd5sigzBj5atZXhSkrwGuT0ljv3VS/zemcc3nbUUGLi+MC
+    Jl85jfTlI3Uw7MscSu8bxxy2DQIDAQABo4GYMIGVMCAGA1UdJQEB/wQWMBQGCCsGAQUFBwMCBggr
+    BgEFBQcDATAOBgNVHQ8BAf8EBAMCBaAwYQYDVR0RBFowWIIMZ3BtMG1pMDEtc3ZjgipncG0wbWkw
+    MS1zdmMuYXJjLXByaW1hcnkuc3ZjLmNsdXN0ZXIubG9jYWyCHGdwbTBtaTAxLXN2Yy5hcmMtcHJp
+    bWFyeS5zdmMwDQYJKoZIhvcNAQELBQADggEBAFPzKGjAz6xr53EBO4iQTcydhK3Y2RPnFsPqkSsF
+    vs+erJ2Abb+lTcUValEsbZsRm0jdY1ASa6uYSlM4Gj4Fl4R9KzkdZFDiLzglHQFJob0yxzE08Srm
+    rUXdACjS8xtzwf/DtjpKDt6DwUIEoDk+PtrZeFZPGwyfMehaaUJv0rV2gt8cG+LCRaQ0+nDZxuGS
+    3LQUo3f3nOto6zweC7K+Dc/Dz3bgUDOaqFZb6PhmXQOQzk94nHwlQhfRe2TuKfD9sUTRqewoFfJR
+    BEeEb7T1W6Sj0IEMysX7rfGzSWMRh9Ezc5TW9n+E9RNMUp1zOh/2T3Tk66A5UwK8y02oCOKSJIU=
+    -----END CERTIFICATE-----
+  partnerMirroringURL: tcp://20.102.10.214:5022
+  role: secondary
+  sharedName: gpm0mi00
+  sourceMI: gpm0mi02
+status:
+  lastUpdateTime: "2022-05-07T22:29:04.139407Z"
+  results: ""
+  role: Secondary
+  state: Succeeded
+```
+
+### Failover from primary to secondary instance
+```bash
+az sql instance-failover-group-arc update --name $fog_name --role force-secondary --k8s-namespace $primary_ns --use-k8s
+
+#  gpm0mi00 is Ready
+
+# In the Primary controller:
+# 2022-05-07 23:05:54.3270 | INFO  | DistributedAgStateMachine:gpm0mi01::TransitionToUpdating : IsPrimary True to False , isForce True 
+# 2022-05-07 23:05:54.3639 | INFO  | DistributedAgStateMachine:gpm0mi01::GetDagRole dump query : 
+# SELECT role FROM sys.dm_hadr_availability_replica_states 
+#         where is_local = 1 and group_id = (select group_id from sys.availability_groups where name = N'gpm0mi00')
+ 
+# 2022-05-07 23:05:54.3639 | INFO  | DistributedAgStateMachine:gpm0mi01::GetDagLocalRole return success with  isPrimaryLocal(True) 
+# 2022-05-07 23:05:54.3712 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync dump query : ALTER AVAILABILITY GROUP [gpm0mi00] MODIFY AVAILABILITY GROUP ON 'gpm0mi02' WITH (AVAILABILITY_MODE = SYNCHRONOUS_COMMIT); 
+# 2022-05-07 23:05:54.3834 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync executed successfully. 
+# 2022-05-07 23:05:54.3877 | INFO  | DistributedAgStateMachine:gpm0mi01::IsDagReplicasSynchronized dump query : 
+# SELECT synchronization_state FROM sys.dm_hadr_database_replica_states 
+#         where group_id = (select group_id from sys.availability_groups where name = N'gpm0mi00')
+ 
+# 2022-05-07 23:05:54.3877 | INFO  | DistributedAgStateMachine:gpm0mi01::IsDagReplicasSynchronized return success with  isSynchronized(False) 
+# 2022-05-07 23:05:56.7179 | INFO  | Succeeded: ALTER AVAILABILITY GROUP [gpm0mi00] SET(ROLE = SECONDARY); 
+# 2022-05-07 23:05:56.7351 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync dump query : ALTER AVAILABILITY GROUP [gpm0mi00] MODIFY AVAILABILITY GROUP ON 'gpm0mi02' WITH (AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT);
+
+az sql instance-failover-group-arc update --name $fog_name --role force-primary-allow-data-loss --k8s-namespace $dr_ns --use-k8s
+
+# gpm0mi00 is Ready
+
+# In the Secondary controller:
+# Nothing
+```
+
+Let's try to connect to our CNAME, which is pointing to `gpm0mi01` now:
+
+![Attempt to connect](_images/fog-3.png)
+
+Update DNS to point to `gpm0mi02`:
+```powershell
+Add-DnsServerResourceRecordCName -Name "gpm0mi00" -HostNameAlias "gpm0mi02.fg.contoso.com" -ZoneName fg.contoso.com -TimeToLive 00:05:00
+ipconfig /flushdns
+nslookup gpm0mi00.fg.contoso.com
+```
+Try again - and we see our data:
+
+![Able to read off secondary](_images/fog-4.png)
+
+### Failover from primary to secondary instance
+
+Let's write some data to see if it surfaces in Primary after:
+```sql
+INSERT INTO table1 VALUES (5, 'demo5')
+
+USE fogtest01
+GO
+SELECT * FROM table1
+```
+
+CRD Status - Before:
+
+![Before Failback](_images/fog-6.png)
+
+Let's failback - by calling our "DR" datacenter to force become Secondary again:
+```bash
+az sql instance-failover-group-arc update --name $fog_name --role force-secondary --k8s-namespace $dr_ns --use-k8s
+# gpm0mi00 is Ready
+```
+What's interesting is, the CR Status in the Second Cluster changes, without us running a command against the "Primary" datacenter:
+
+![After Failback](_images/fog-7.png)
+
+We perform our DNS failover, and can connect to our Primary. We see our INSERT-ed data:
+![INSERTed data](_images/fog-8.png)
+
+How are failovers happening at the CRD level?
+> https://github.com/mdrakiburrahman/az_cli_arcdata_whl_dump/blob/3071cada6a268e87e83b06bd38b07453471491d1/azext_arcdata/sqlmi/custom.py#L1480
+
+Basically - `patch = {"spec": {"role": role}}` - where `role=force-secondary` on the Current Primary demotes it, and forces `role=force-primary-allow-data-loss` on the Current Secondary - and the roles switch in `status`.
+
+In other words, we only need to take the current Primary, patch it with `force-secondary`.
+
+The following should happen:
+1. On this current Primary - `spec.role` will change to `force-secondary` - what we did above
+2. On the current Secondary - `spec.role` will change to `force-primary-allow-data-loss` - automatically
+3. On the current Primary - `status.role` will change to `Secondary` - desired state - it is now Secondary
+4. On the current Secondary - `status.role` will change to `Primary` - desired state - it is now Primary
+5. Repeat as many times as we like
+
+Let's try this Kube-Native on a fresh setup by blowing everything up:
+```bash
+export fog_name=gpm0mi00
+export primary_mi=gpm0mi01
+export primary_ns=arc-primary
+export dr_mi=gpm0mi02
+export dr_ns=arc-dr
+
+kubectl delete fog $fog_name -n $primary_ns
+kubectl delete fog $fog_name -n $dr_ns
+
+kubectl delete sqlmi $primary_mi -n $primary_ns
+kubectl delete sqlmi $dr_mi -n $dr_ns
+
+kubectl delete pvc -l=app.kubernetes.io/instance=$primary_mi -n $primary_ns
+kubectl delete pvc -l=app.kubernetes.io/instance=$dr_mi -n $dr_ns
+
+kubectl delete job kube-keytab-secret-generator -n $primary_ns
+kubectl delete job kube-keytab-secret-generator -n $dr_ns
+```
+
+And we repeat the steps above until we have 2 SQL MIs that are AD + DNS Onboarded - except now we'll create the FoG via kubectl.
+
+## Setup FoG - Kube-Native
+```bash
+# = = = = = = =
+# Get certs
+# = = = = = = =
+cd /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/kube_native
+
+export mi=gpm0mi01
+export ns=arc-primary
+# export mi=gpm0mi02
+# export ns=arc-dr
+kubectl get sqlmi $mi -n $ns --template={{.status.highAvailability.mirroringCertificate}} > /workspaces/sql-miaa-migrations/kubernetes-dr/sqlcerts/kube_native/$mi.pem​
+
+# Create both FoGs
+export fog_name=gpm0mi00
+export primary_mi=gpm0mi01
+export primary_ns=arc-primary
+export primary_url=20.121.86.181
+export dr_mi=gpm0mi02
+export dr_ns=arc-dr
+export dr_url=20.232.233.43
+
+cat <<EOF | kubectl apply -f -
+apiVersion: sql.arcdata.microsoft.com/v1beta2
+kind: FailoverGroup
+metadata:
+  name: $fog_name
+  namespace: $primary_ns
+spec:
+  sharedName: $fog_name
+  role: primary
+  sourceMI: $primary_mi
+  partnerMI: $dr_mi
+  partnerMirroringURL: tcp://$dr_url:5022
+  partnerMirroringCert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIDRzCCAi+gAwIBAgIIC4fKSjW6GHIwDQYJKoZIhvcNAQELBQAwKDEmMCQGA1UEAxMdQ2x1c3Rl
+    ciBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkwHhcNMjIwNTA4MDA1NDUwWhcNMjcwNTA3MDA1NDUwWjAO
+    MQwwCgYDVQQDEwNkYm0wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDGLUDxNIX3vbFg
+    //rtVP/gOkoAhm0vf/lyf6wgqmQSbHDMFpGca7jOd48Z0vOV80HtbdVF1l9Zg4xWs/xmrBV5q+a8
+    EReRKZ2hL7kib+B4UAtmrPF8mriVSpN8u/s5pvs6OtVeNoeZMi1Qt9h9skjmVhyz9Fein8AmCM7O
+    MGyQ/QjlzyTTK9NpdCJH6UQ7zdfDwGN+MGi0Z9RtsZ16OaZf4cAzqvvlCugUYAdM4aGPWc0a7HlF
+    wEuwoi/+CuV3zYfwTCJj5wJR6lcB8cTDZv9EqzgaiZ6d5SUnfD+WC4hTcDaz5Xl2UB+S3uO7DO7R
+    ZuaWJWUg3Pjx92I3Or5GOxqrAgMBAAGjgY4wgYswIAYDVR0lAQH/BBYwFAYIKwYBBQUHAwIGCCsG
+    AQUFBwMBMA4GA1UdDwEB/wQEAwIFoDBXBgNVHREEUDBOggxncG0wbWkwMi1zdmOCJWdwbTBtaTAy
+    LXN2Yy5hcmMtZHIuc3ZjLmNsdXN0ZXIubG9jYWyCF2dwbTBtaTAyLXN2Yy5hcmMtZHIuc3ZjMA0G
+    CSqGSIb3DQEBCwUAA4IBAQALyKw5rOkbqjp8N3ap9EMsUH29MPBNrLsY9t7CNRrw90l4Q+pIpUSx
+    HVewR/ravxT0boq3ntZyYXwiAMyPMK9AAHUp28iUvPfGLdU8kEFQ9m7zdaA435efJhzTnskUzjIx
+    Dl5Hiy+nbckoiR8WG6AiFKMx+J98wm0BA7fERfjCmD5+Dr3tIyvPRYGiRA9hlZM0ZBKnD1IIgn3m
+    UKXdhdLWwqZzV/siSNNR+1t8M3TMumsk2nHJCBtEg9MaJFTLmsAdnuFhQfQgqr/uS0MVbibjHP0o
+    el1z0gLWPFcbAJiMR5fk7jR7Sltc/lwzUcaaN42tcKSU4fnSaNa7wZfV66gl
+    -----END CERTIFICATE-----
+---
+apiVersion: sql.arcdata.microsoft.com/v1beta2
+kind: FailoverGroup
+metadata:
+  name: $fog_name
+  namespace: $dr_ns
+spec:
+  sharedName: $fog_name
+  role: secondary
+  sourceMI: $dr_mi
+  partnerMI: $primary_mi
+  partnerMirroringURL: tcp://$primary_url:5022
+  partnerMirroringCert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIDUjCCAjqgAwIBAgIJAKUpLNAzhqZrMA0GCSqGSIb3DQEBCwUAMCgxJjAkBgNVBAMTHUNsdXN0
+    ZXIgQ2VydGlmaWNhdGUgQXV0aG9yaXR5MB4XDTIyMDUwODAwNTQzMloXDTI3MDUwNzAwNTQzMlow
+    DjEMMAoGA1UEAxMDZGJtMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4eTsEiNkSHxy
+    OSNcmvRpQBZ2cAoRZce6UWcZCKRAdEdywBvg5NVyziXY3/eioXNIX2yND0LHcgNPNuepkKNgmEYz
+    eO+e/UwPf6b7jV8SChEhaGspVfvko7IBwkmS+mcWb5JqpNR7zsJAK/gg183facqJHhZMd+pP4/rw
+    5inS+VES1P68UuS5hUVDZkXVIC8zHqgMcCVYfumBJ8H1rYQ9as5XCrtIGKFFTNFATX4u58M7JAV1
+    DDDkpHBDIZpJe6xrZjzllzQ7dKbJNkYDDU5bdLP3aEidzJyXoKCxN+dOklNOuDTDH2C5dEKq4o4h
+    BiX9M4YSIVUiIqhdLlvfF9OmvwIDAQABo4GYMIGVMCAGA1UdJQEB/wQWMBQGCCsGAQUFBwMCBggr
+    BgEFBQcDATAOBgNVHQ8BAf8EBAMCBaAwYQYDVR0RBFowWIIMZ3BtMG1pMDEtc3ZjgipncG0wbWkw
+    MS1zdmMuYXJjLXByaW1hcnkuc3ZjLmNsdXN0ZXIubG9jYWyCHGdwbTBtaTAxLXN2Yy5hcmMtcHJp
+    bWFyeS5zdmMwDQYJKoZIhvcNAQELBQADggEBAF8ofBXDPqfn5dunZkYqwWk8FAYxhNQ0gkr7f8mw
+    9NhZYt/YOsOcFtXqbU0u2Ve3f51s78q2UFptSJV6WOuVwDXy9z2HiGEoasd8co7to3CRFtweyHaY
+    8+NHbr1XBg8USrf1gDhpswAPwaME90tmZVqHSPxo3u9cHP8muZiiuk+TYwiJ/fi+drYnSkgAOYkL
+    3sRArB/J8dHxhZMZHXVZCDyqV//t/cdgCAn49raozjhVh/HXyVq8KC7OI3XfSSbYM/sPp9ewPAPP
+    U31nLNtKUOAMbSFJissUlMVH+5gMBhhrICoXpAkFjv6nJKFpa5YOxGkTVzm15WGZxBe3jrWc0BQ=
+    -----END CERTIFICATE-----
+EOF
+# failovergroup.sql.arcdata.microsoft.com/gpm0mi00 created
+# failovergroup.sql.arcdata.microsoft.com/gpm0mi00 created
+```
+
+`INSERT` some data into Primary `gpm0mi00.fg.contoso.com,31433`:
+```sql
+CREATE DATABASE fogtest01
+GO
+
+USE fogtest01
+GO
+
+CREATE TABLE table1 (ID int, value nvarchar(10))
+GO
+
+INSERT INTO table1 VALUES (1, 'demo1')
+INSERT INTO table1 VALUES (2, 'demo4')
+INSERT INTO table1 VALUES (3, 'demo3')
+INSERT INTO table1 VALUES (4, 'demo4')
+
+SELECT * FROM table1
+```
+
+![FOG Before](_images/fog-k8s-1.png)
+
+Now, we failover `Secondary -> Primary`:
+```bash
+kubectl patch fog $fog_name -n $primary_ns --type=merge -p '{"spec": {"role": "force-secondary"}}'
+# failovergroup.sql.arcdata.microsoft.com/gpm0mi00 patched
+```
+
+In the Primary Controller:
+```text
+2022-05-08 01:35:49.2807 | INFO  | DistributedAgStateMachine:gpm0mi01::TransitionToUpdating : IsPrimary True to False , isForce True 
+2022-05-08 01:35:49.3300 | INFO  | DistributedAgStateMachine:gpm0mi01::GetDagRole dump query : 
+SELECT role FROM sys.dm_hadr_availability_replica_states 
+        where is_local = 1 and group_id = (select group_id from sys.availability_groups where name = N'gpm0mi00')
+ 
+2022-05-08 01:35:49.3473 | INFO  | DistributedAgStateMachine:gpm0mi01::GetDagLocalRole return success with  isPrimaryLocal(True) 
+2022-05-08 01:35:49.3520 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync dump query : ALTER AVAILABILITY GROUP [gpm0mi00] MODIFY AVAILABILITY GROUP ON 'gpm0mi02' WITH (AVAILABILITY_MODE = SYNCHRONOUS_COMMIT); 
+2022-05-08 01:35:49.3630 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync executed successfully. 
+2022-05-08 01:35:49.3714 | INFO  | DistributedAgStateMachine:gpm0mi01::IsDagReplicasSynchronized dump query : 
+SELECT synchronization_state FROM sys.dm_hadr_database_replica_states 
+        where group_id = (select group_id from sys.availability_groups where name = N'gpm0mi00')
+ 
+2022-05-08 01:35:49.3760 | INFO  | DistributedAgStateMachine:gpm0mi01::IsDagReplicasSynchronized return success with  isSynchronized(False) 
+2022-05-08 01:35:50.3207 | INFO  | Succeeded: ALTER AVAILABILITY GROUP [gpm0mi00] SET(ROLE = SECONDARY); 
+2022-05-08 01:35:50.3354 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync dump query : ALTER AVAILABILITY GROUP [gpm0mi00] MODIFY AVAILABILITY GROUP ON 'gpm0mi02' WITH (AVAILABILITY_MODE = ASYNCHRONOUS_COMMIT); 
+2022-05-08 01:35:50.4007 | INFO  | DistributedAgStateMachine:gpm0mi01::SetDagRemoteReplicasToSync executed successfully. 
+```
+
+In the Secondary Controller:
+```text
+2022-05-08 01:35:49.4399 | INFO  | DagCommand request received. StatefulSet: gpm0mi02, Availability Group: gpm0mi00 
+2022-05-08 01:35:49.4457 | INFO  | DagCommand request Succeeded. StatefulSet: gpm0mi02, Availability Group: gpm0mi00, CR Name gpm0mi00, CR Namespace arc-dr 
+2022-05-08 01:35:49.4457 | INFO  | DagCommand request Succeeded. StatefulSet: gpm0mi02, Availability Group: gpm0mi00, perform geo failover. 
+2022-05-08 01:35:49.4457 | INFO  | DistributedAgStateMachine:gpm0mi02::CrdApplyLocalPrimary: Entry. 
+2022-05-08 01:35:49.4531 | INFO  | DistributedAgStateMachine:gpm0mi02::CrdApplyLocalPrimary: replace $.spec.role with force-primary-allow-data-loss.
+```
+
+![FOG After](_images/fog-k8s-2.png)
+
+We can now connect to our `gpm0mi02` after a DNS failover using SSO, and see our data:
+
+![Connect After](_images/fog-k8s-3.png)
+
+Now, we INSERT some data and failback:
+```sql
+INSERT INTO table1 VALUES (5, 'demo5')
+INSERT INTO table1 VALUES (6, 'demo6')
+```
+
+```bash
+kubectl patch fog $fog_name -n $dr_ns --type=merge -p '{"spec": {"role": "force-secondary"}}'
+# failovergroup.sql.arcdata.microsoft.com/gpm0mi00 patched
+```
+![CRD After](_images/fog-k8s-4.png)
+
+And we see our Data after a DNS failover:
+
+![Data After](_images/fog-k8s-5.png)
