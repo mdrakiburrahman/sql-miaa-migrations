@@ -2303,6 +2303,9 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.5.0/a
 # Expose
 kubectl expose deployment kubernetes-dashboard -n kubernetes-dashboard --type=LoadBalancer --name=kubernetes-dashboard-external-svc --port=8001 --target-port=8443
 
+# Get IP
+kubectl get svc -n kubernetes-dashboard | grep kubernetes-dashboard-external-svc
+
 kubectl proxy
 # https://20.88.184.53:8001/
 # Point to kubeconfig
